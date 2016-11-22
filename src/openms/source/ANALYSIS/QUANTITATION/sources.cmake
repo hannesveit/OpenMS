@@ -16,6 +16,7 @@ ItraqFourPlexQuantitationMethod.cpp
 ItraqQuantifier.cpp
 KDTreeFeatureMaps.cpp
 KDTreeFeatureNode.cpp
+OptiQuantAlgorithm.cpp
 PeptideAndProteinQuant.cpp
 ProteinInference.cpp
 ProteinResolver.cpp

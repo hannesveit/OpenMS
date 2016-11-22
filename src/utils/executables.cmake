@@ -31,6 +31,7 @@ MSSimulator
 MultiplexResolver
 MzMLSplitter
 OpenMSInfo
+OptiQuant
 PeakPickerIterative
 QCCalculator
 QCEmbedder

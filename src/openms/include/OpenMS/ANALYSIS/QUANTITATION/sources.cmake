@@ -16,6 +16,7 @@ ItraqFourPlexQuantitationMethod.h
 ItraqQuantifier.h
 KDTreeFeatureMaps.h
 KDTreeFeatureNode.h
+OptiQuantAlgorithm.h
 PeptideAndProteinQuant.h
 ProteinInference.h
 ProteinResolver.h

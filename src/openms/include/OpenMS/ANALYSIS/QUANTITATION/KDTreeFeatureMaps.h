@@ -85,13 +85,23 @@ public:
 
     for (Size i = 0; i < num_maps_; ++i)
     {
-      const MapType& m = maps[i];
-      for (typename MapType::const_iterator it = m.begin(); it != m.end(); ++it)
-      {
-        addFeature(i, &(*it));
-      }
+      addFeatures(i, maps[i]);
     }
     optimizeTree();
+  }
+
+  /// Add @p map
+  template <typename MapType>
+  void addFeatures(Size map_index, const MapType& map, bool optimize = false)
+  {
+    for (typename MapType::const_iterator it = map.begin(); it != map.end(); ++it)
+    {
+      addFeature(map_index, &(*it));
+    }
+    if (optimize)
+    {
+      optimizeTree();
+    }
   }
 
   /// Add feature
