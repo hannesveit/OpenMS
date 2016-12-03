@@ -173,7 +173,7 @@ protected:
   void resolveConflicts_(const std::vector<FeatureHypothesis>& hypos, const std::vector<std::vector<Size> >& hypos_for_mt, std::vector<FeatureHypothesis>& result);
 
   /// TODO
-  void resolveHypothesisCluster_(const std::vector<FeatureHypothesis>& hypos, const std::set<Size>& hypo_cluster_indices, std::vector<FeatureHypothesis>& result);
+  void resolveHypothesisCluster_(const std::vector<FeatureHypothesis>& hypos, const std::vector<std::vector<Size> >& hypos_for_mt, const std::set<Size>& hypo_cluster_indices, std::vector<FeatureHypothesis>& result);
 
   /// TODO
   double computeCosineSim_(const std::vector<double>& x, const std::vector<double>& y) const;

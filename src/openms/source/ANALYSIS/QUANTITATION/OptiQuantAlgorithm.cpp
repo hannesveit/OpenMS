@@ -283,37 +283,45 @@ void OptiQuantAlgorithm::resolveConflicts_(const vector<FeatureHypothesis>& hypo
     }
 
     // resolve conflicts in this cluster and add final features to result (IDEA: parallelize)
-    resolveHypothesisCluster_(hypos, current_hypo_cluster_indices, result);
+    resolveHypothesisCluster_(hypos, hypos_for_mt, current_hypo_cluster_indices, result);
   }
 }
 
-void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesis>& hypos, const set<Size>& hypo_cluster_indices, vector<FeatureHypothesis>& result)
+void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesis>& hypos, const vector<vector<Size> >& hypos_for_mt, const set<Size>& hypo_cluster_indices, vector<FeatureHypothesis>& result)
 {
   Size n = hypo_cluster_indices.size();
   if (n == 0)
   {
     return;
   }
+  if (n == 1)
+  {
+    // solution is trivial
+    result.push_back(hypos[*(hypo_cluster_indices.begin())]);
+    return;
+  }
 
-//  double rt_max = 0;
-//  double mz_max = 0;
-//  double rt_min = 1e10;
-//  double mz_min = 1e10;
+  // ---------------------------------
+  double rt_max = 0;
+  double mz_max = 0;
+  double rt_min = 1e10;
+  double mz_min = 1e10;
 
-//  for (set<Size>::const_iterator it = hypo_cluster_indices.begin(); it != hypo_cluster_indices.end(); ++it)
-//  {
-//    double mz = kd_data_.mz(hypos[*it].getMassTraces()[0].second);
-//    double rt = kd_data_.rt(hypos[*it].getMassTraces()[0].second);
-//    if (mz < mz_min) mz_min = mz;
-//    if (rt < rt_min) rt_min = rt;
-//    if (mz > mz_max) mz_max = mz;
-//    if (rt > rt_max) rt_max = rt;
-//  }
-//  cout << "### Resolving hypothesis cluster of size " << n
-//       << fixed << setprecision(2)
-//       << " (mz = " << mz_min << " - " << mz_max
-//       << "; rt = " << rt_min << " - " << rt_max
-//       << ") ###" << endl;
+  for (set<Size>::const_iterator it = hypo_cluster_indices.begin(); it != hypo_cluster_indices.end(); ++it)
+  {
+    double mz = kd_data_.mz(hypos[*it].getMassTraces()[0].second);
+    double rt = kd_data_.rt(hypos[*it].getMassTraces()[0].second);
+    if (mz < mz_min) mz_min = mz;
+    if (rt < rt_min) rt_min = rt;
+    if (mz > mz_max) mz_max = mz;
+    if (rt > rt_max) rt_max = rt;
+  }
+  cout << "### Resolving hypothesis cluster of size " << n
+       << fixed << setprecision(2)
+       << " (mz = " << mz_min << " - " << mz_max
+       << "; rt = " << rt_min << " - " << rt_max
+       << ") ###" << endl;
+  // ---------------------------------
 
   vector<Size> hypo_indices(hypo_cluster_indices.begin(), hypo_cluster_indices.end());
 
@@ -323,7 +331,14 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
   {
     IloModel model(env);
     IloNumVarArray x(env);
-    IloRangeArray c(env);
+    //IloRangeArray c(env);
+
+    // compute scores
+    vector<double> scores(hypo_indices.size());
+    for (Size i = 0; i < hypo_indices.size(); ++i)
+    {
+      scores[i] = computeScore_(hypos[hypo_indices[i]]);
+    }
 
     // objective function
     IloExpr ilo_var_sum(env);
@@ -331,45 +346,128 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
     {
       IloNumVar ilo_var(env, 0.0, 1.0, IloNumVar::ILOBOOL);
       x.add(ilo_var);
-      double coeff = computeScore_(hypos[hypo_indices[i]]);
-      ilo_var_sum += coeff * ilo_var;
+      ilo_var_sum += scores[i] * ilo_var;
     }
     model.add(IloMaximize(env, ilo_var_sum));
 
-    // constraints
-    for (Size i = 0; i < hypo_indices.size() - 1; ++i)
+//    // constraints
+//    for (Size i = 0; i < hypo_indices.size() - 1; ++i)
+//    {
+//      for (Size j = i + 1; j < hypo_indices.size(); ++j)
+//      {
+//        bool compatible = true;
+
+//        const FeatureHypothesis& hypo_i = hypos[hypo_indices[i]];
+//        const FeatureHypothesis& hypo_j = hypos[hypo_indices[j]];
+
+//        for (Size k = 0; k < hypo_i.size(); ++k)
+//        {
+//          for (Size l = 0; l < hypo_j.size(); ++l)
+//          {
+//            if (hypo_i.getMassTraces()[k].second == hypo_j.getMassTraces()[l].second)
+//            {
+//              // i and j share mass traces => incompatible
+//              compatible = false;
+//              c.add(x[i] + x[j] <= 1.0);
+//              break;
+//            }
+//          }
+//          if (!compatible)
+//          {
+//            break;
+//          }
+//        }
+//      }
+//    }
+//    model.add(c);
+
+    // TODO: refactor this (so the following hack and similar stunts are not needed anymore...)
+    map<Size, Size> hypo_idx_reverse_map;
+    for (Size i = 0; i < hypo_indices.size(); ++i)
     {
-      for (Size j = i + 1; j < hypo_indices.size(); ++j)
+      cout << " (" << hypo_indices[i] << " --> " << i << ") ";
+      hypo_idx_reverse_map[hypo_indices[i]] = i;
+    }
+    cout << endl;
+
+    // compile a list of all involved mass trace indices
+    set<Size> involved_mass_traces;
+    for (Size i = 0; i < hypo_indices.size(); ++i)
+    {
+      const FeatureHypothesis& h = hypos[hypo_indices[i]];
+      const vector<pair<Size, Size> >& h_mts = h.getMassTraces();
+      for (Size j = 0; j < h_mts.size(); ++j)
       {
-        bool compatible = true;
-
-        const FeatureHypothesis& hypo_i = hypos[hypo_indices[i]];
-        const FeatureHypothesis& hypo_j = hypos[hypo_indices[j]];
-
-        for (Size k = 0; k < hypo_i.size(); ++k)
-        {
-          for (Size l = 0; l < hypo_j.size(); ++l)
-          {
-            if (hypo_i.getMassTraces()[k].second == hypo_j.getMassTraces()[l].second)
-            {
-              // i and j share mass traces => incompatible
-              compatible = false;
-              c.add(x[i] + x[j] <= 1.0);
-              break;
-            }
-          }
-          if (!compatible)
-          {
-            break;
-          }
-        }
+        involved_mass_traces.insert(h_mts[j].second);
       }
     }
-    model.add(c);
+
+    // for each involved mass trace, create a SOS1 constraint so that only one of the hypotheses
+    // that this mass trace is involved in is selected
+    IloSOS1Array sos_constraints(env);
+
+    for (set<Size>::const_iterator it = involved_mass_traces.begin(); it != involved_mass_traces.end(); ++it)
+    {
+      // TODO: speed up by not adding duplicate SOS1s? or does CPLEX eliminate these before solving?
+
+      const vector<Size>& mt_hypos = hypos_for_mt[*it];
+
+      if (mt_hypos.size() < 2)
+      {
+        // no constraint needed (this mass trace belongs to only a single hypothesis)
+        continue;
+      }
+
+      // extract scores for hypotheses, add epsilon if scores are identical (HACK)
+      // (SOS weights must be unique for CPLEX)
+      set<double> unique_weights_set;
+      vector<double> unique_weights(mt_hypos.size());
+      for (Size i = 0; i < mt_hypos.size(); ++i)
+      {
+        // get original score for this hypothesis
+        Size local_idx;
+        try
+        {
+          local_idx = hypo_idx_reverse_map.at(mt_hypos[i]);
+        }
+        catch(...)
+        {
+          cout << "Unknown index mt_hypos[" << i << "] = " << mt_hypos[i] << endl;
+          cout << "(mt_hypos.size() == " << mt_hypos.size() << ")" << endl;
+          cout << "Map contains:";
+          for (map<Size, Size>::const_iterator shit = hypo_idx_reverse_map.begin(); shit != hypo_idx_reverse_map.end(); ++shit)
+          {
+            cout << " (" << shit->first << " --> " << shit->second << ") ";
+          }
+          cout << endl;
+          exit(1);
+        }
+
+        double weight = scores[local_idx];
+        // compute final score, making sure weights are unique:
+        // if weight already taken, add small epsilons until unique
+        for (;unique_weights_set.count(weight); weight += 1e-6);
+        unique_weights_set.insert(weight);
+        unique_weights[i] = weight;
+      }
+      cout << endl;
+
+      // construct SOS1 constraint using the now unique weights
+      IloNumVarArray vars(env);
+      IloNumArray vals(env);
+      for (Size i = 0; i < mt_hypos.size(); ++i)
+      {
+        Size local_idx = hypo_idx_reverse_map[mt_hypos[i]];
+        vars.add(x[local_idx]);
+        vals.add(unique_weights[i]);
+      }
+      sos_constraints.add(IloSOS1(env, vars, vals));
+    }
+    model.add(sos_constraints);
 
     // optimize
     IloCplex cplex(model);
-    //cplex.exportModel(("cplex.lp").c_str());
+    cplex.exportModel("cplex.lp");
 
     if (!cplex.solve())
     {
