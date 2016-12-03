@@ -95,6 +95,8 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map) :
   defaults_.setValue("max_num_traces", 6, "Search only for the first max_num_traces isotope traces");
   defaults_.setMinInt("max_num_traces", 1);
 
+  defaults_.setValue("solver_time_limit", -1, "CPLEX time limit (in seconds) for solving one cluster of contiguous hypotheses. No time limit when set to -1.");
+
   defaultsToParam_();
 
   this->setLogType(CMD);
@@ -381,14 +383,12 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
 //    }
 //    model.add(c);
 
-    // TODO: refactor this (so the following hack and similar stunts are not needed anymore...)
+    // TODO: eventually refactor this (so the following hack and similar stunts are not needed anymore)
     map<Size, Size> hypo_idx_reverse_map;
     for (Size i = 0; i < hypo_indices.size(); ++i)
     {
-      cout << " (" << hypo_indices[i] << " --> " << i << ") ";
       hypo_idx_reverse_map[hypo_indices[i]] = i;
     }
-    cout << endl;
 
     // compile a list of all involved mass trace indices
     set<Size> involved_mass_traces;
@@ -425,24 +425,7 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
       for (Size i = 0; i < mt_hypos.size(); ++i)
       {
         // get original score for this hypothesis
-        Size local_idx;
-        try
-        {
-          local_idx = hypo_idx_reverse_map.at(mt_hypos[i]);
-        }
-        catch(...)
-        {
-          cout << "Unknown index mt_hypos[" << i << "] = " << mt_hypos[i] << endl;
-          cout << "(mt_hypos.size() == " << mt_hypos.size() << ")" << endl;
-          cout << "Map contains:";
-          for (map<Size, Size>::const_iterator shit = hypo_idx_reverse_map.begin(); shit != hypo_idx_reverse_map.end(); ++shit)
-          {
-            cout << " (" << shit->first << " --> " << shit->second << ") ";
-          }
-          cout << endl;
-          exit(1);
-        }
-
+        Size local_idx = hypo_idx_reverse_map[mt_hypos[i]];
         double weight = scores[local_idx];
         // compute final score, making sure weights are unique:
         // if weight already taken, add small epsilons until unique
@@ -450,7 +433,6 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
         unique_weights_set.insert(weight);
         unique_weights[i] = weight;
       }
-      cout << endl;
 
       // construct SOS1 constraint using the now unique weights
       IloNumVarArray vars(env);
@@ -467,7 +449,11 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
 
     // optimize
     IloCplex cplex(model);
-    cplex.exportModel("cplex.lp");
+    if (solver_time_limit_ > 0)
+    {
+      cplex.setParam(IloCplex::TiLim, (double)solver_time_limit_);
+    }
+    //cplex.exportModel("cplex.lp");
 
     if (!cplex.solve())
     {
@@ -687,6 +673,7 @@ void OptiQuantAlgorithm::updateMembers_()
   charge_high_ = (Size)(param_.getValue("charge_high"));
   require_first_n_traces_ = (Size)(param_.getValue("require_first_n_traces"));
   max_num_traces_ = (Size)(param_.getValue("max_num_traces"));
+  solver_time_limit_ = param_.getValue("solver_time_limit");
 }
 
 }

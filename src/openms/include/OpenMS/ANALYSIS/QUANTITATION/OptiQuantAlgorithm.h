@@ -158,6 +158,9 @@ protected:
   Size require_first_n_traces_;
 
   /// TODO
+  Int solver_time_limit_;
+
+  /// TODO
   KDTreeFeatureMaps kd_data_;
 
   /// TODO
