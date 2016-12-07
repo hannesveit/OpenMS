@@ -113,6 +113,10 @@ protected:
     // prepare output map
     ConsensusMap output_map;
     output_map.setFileDescriptions(input_map.getFileDescriptions());
+    output_map.setPrimaryMSRunPath(input_map.getPrimaryMSRunPath());
+    output_map.setDataProcessing(input_map.getDataProcessing());
+    output_map.setProteinIdentifications(input_map.getProteinIdentifications());
+    output_map.setUnassignedPeptideIdentifications(input_map.getUnassignedPeptideIdentifications());
     output_map.ensureUniqueId();
 
     // run algorithm
