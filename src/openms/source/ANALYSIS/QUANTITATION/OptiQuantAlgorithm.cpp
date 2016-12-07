@@ -95,6 +95,9 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map) :
   defaults_.setValue("max_num_traces", 6, "Search only for the first max_num_traces isotope traces");
   defaults_.setMinInt("max_num_traces", 1);
 
+  defaults_.setValue("require_monoiso", "true", "Include subfeature for map i only if the monoisotopic trace of this feature has been detected in map i");
+  defaults_.setValidStrings("require_monoiso", ListUtils::create<String>("true,false"));
+
   defaults_.setValue("use_ids", "true", "If a mass trace has identifications attached, generate only hypotheses for the charge state(s) found in these peptide IDs when generating hypotheses for this (monoisotopic) mass trace.");
   defaults_.setValidStrings("use_ids", ListUtils::create<String>("true,false"));
 
@@ -431,7 +434,7 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
     }
 
     // for each involved mass trace, create a SOS1 constraint so that only one of the hypotheses
-    // that this mass trace is involved in is selected
+    // that this mass trace is involved in can be selected
     IloSOS1Array sos_constraints(env);
 
     for (set<Size>::const_iterator it = involved_mass_traces.begin(); it != involved_mass_traces.end(); ++it)
@@ -609,6 +612,12 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
     }
 
     const vector<double>& iso_ints = intensities_for_map_idx[i];
+    if (require_monoiso_ && iso_ints[0] == 0.0)
+    {
+      // monoisotopic trace missing => this subfeature does not contribute to score
+      continue;
+    }
+
     Size nr_detected_traces = 0;
     for (vector<double>::const_iterator it = iso_ints.begin(); it != iso_ints.end(); ++it)
     {
@@ -687,6 +696,12 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
       }
 
       const vector<double>& iso_ints = intensities_for_map_idx[i];
+      if (require_monoiso_ && iso_ints[0] == 0.0)
+      {
+        // monoisotopic trace missing => do not add subfeature for this map
+        continue;
+      }
+
       double summed_int = accumulate(iso_ints.begin(), iso_ints.end(), 0.0);
 
       BaseFeature f;
@@ -698,7 +713,8 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
       }
       else
       {
-        // monoisotopic trace not found for map i, use values from consensus
+        // monoisotopic trace not found for map i (and require_monoiso_ == false)
+        // ==> use values from monoisotopic consensus trace
         f.setMZ(mono_mt_cf.getMZ());
         f.setRT(mono_mt_cf.getRT());
       }
@@ -722,6 +738,7 @@ void OptiQuantAlgorithm::updateMembers_()
   require_first_n_traces_ = (Size)(param_.getValue("require_first_n_traces"));
   max_num_traces_ = (Size)(param_.getValue("max_num_traces"));
   use_ids_ = (param_.getValue("use_ids").toString() == "true");
+  require_monoiso_ = (param_.getValue("require_monoiso").toString() == "true");
   solver_time_limit_ = param_.getValue("solver_time_limit");
 }
 

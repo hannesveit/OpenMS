@@ -158,6 +158,9 @@ protected:
   Size require_first_n_traces_;
 
   /// TODO
+  bool require_monoiso_;
+
+  /// TODO
   bool use_ids_;
 
   /// TODO
