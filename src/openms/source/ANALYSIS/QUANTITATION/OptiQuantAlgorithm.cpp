@@ -660,6 +660,11 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
 
       final_cf.insert(i, f);
     }
+
+    // transfer identifications from monoisotopic mass trace
+    final_cf.setPeptideIdentifications(mono_mt_cf.getPeptideIdentifications());
+
+    // add to result
     output_map.push_back(final_cf);
   }
 }
