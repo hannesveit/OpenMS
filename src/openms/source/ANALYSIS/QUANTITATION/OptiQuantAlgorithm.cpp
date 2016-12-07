@@ -653,18 +653,14 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
       double summed_int = accumulate(iso_ints.begin(), iso_ints.end(), 0.0);
 
       BaseFeature f;
-      f.setMZ(mono_mt_cf.getMZ());
-      f.setRT(mono_mt_cf.getRT());
+      f.setMZ(mono_mt_cf.getMZ()); // TODO: use subfeature value
+      f.setRT(mono_mt_cf.getRT()); // TODO: use subfeature value
       f.setCharge(hypo.getCharge());
       f.setIntensity(summed_int);
 
       final_cf.insert(i, f);
     }
 
-    // transfer identifications from monoisotopic mass trace
-    final_cf.setPeptideIdentifications(mono_mt_cf.getPeptideIdentifications());
-
-    // add to result
     output_map.push_back(final_cf);
   }
 }
