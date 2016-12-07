@@ -158,6 +158,9 @@ protected:
   Size require_first_n_traces_;
 
   /// TODO
+  bool use_ids_;
+
+  /// TODO
   Int solver_time_limit_;
 
   /// TODO

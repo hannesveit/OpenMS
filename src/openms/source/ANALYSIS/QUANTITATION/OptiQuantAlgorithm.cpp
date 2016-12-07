@@ -95,6 +95,9 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map) :
   defaults_.setValue("max_num_traces", 6, "Search only for the first max_num_traces isotope traces");
   defaults_.setMinInt("max_num_traces", 1);
 
+  defaults_.setValue("use_ids", "true", "If a mass trace has identifications attached, generate only hypotheses for the charge state(s) found in these peptide IDs when generating hypotheses for this (monoisotopic) mass trace.");
+  defaults_.setValidStrings("use_ids", ListUtils::create<String>("true,false"));
+
   defaults_.setValue("solver_time_limit", -1, "CPLEX time limit (in seconds) for solving one cluster of contiguous hypotheses. No time limit when set to -1.");
 
   defaultsToParam_();
@@ -153,15 +156,40 @@ void OptiQuantAlgorithm::assembleFeatures_(vector<FeatureHypothesis>& features)
 
 void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Size>& candidate_indices, vector<FeatureHypothesis>& hypos, vector<vector<Size> >& hypos_for_mt)
 {
-  double mz = kd_data_.mz(mono_iso_mt_index);
-
-  vector<FeatureHypothesis> new_hypos;
-
-  for (Int c = charge_low_; c <= charge_high_; ++c)
+  // generate the set of charge states to consider for this monoisotopic mass trace
+  set<Int> charges;
+  const vector<PeptideIdentification>& ids = kd_data_.feature(mono_iso_mt_index)->getPeptideIdentifications();
+  if (use_ids_ && ids.size() && ids[0].getHits().size())
   {
-    vector<FeatureHypothesis> hypos_for_charge;
+    // consider only charge states supported by the attached IDs
+    for (vector<PeptideIdentification>::const_iterator it = ids.begin(); it != ids.end(); ++it)
+    {
+      const PeptideIdentification& pep_id = *it;
+      const vector<PeptideHit>& hits = pep_id.getHits();
+      for (vector<PeptideHit>::const_iterator hit_it = hits.begin(); hit_it != hits.end(); ++hit_it)
+      {
+        const PeptideHit& hit = *hit_it;
+        charges.insert(hit.getCharge());
+      }
+    }
+  }
+  else
+  {
+    // consider all charge states in the user-specified range
+    for (Int c = charge_low_; c <= charge_high_; ++c)
+    {
+      charges.insert(c);
+    }
+  }
 
-    FeatureHypothesis hypo(c);
+  // generate hypotheses for all considered charge states
+  double mz = kd_data_.mz(mono_iso_mt_index);
+  vector<FeatureHypothesis> new_hypos;
+  for (set<Int>::const_iterator c_it = charges.begin(); c_it != charges.end(); ++c_it)
+  {
+    Int z = *c_it;
+    vector<FeatureHypothesis> hypos_for_charge;
+    FeatureHypothesis hypo(z);
     hypo.addMassTrace(make_pair(0, mono_iso_mt_index));
     hypos_for_charge.push_back(hypo);
 
@@ -170,7 +198,7 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
       vector<FeatureHypothesis> hypos_for_iso_pos;
 
       // TODO: speed up using tolerance window query instead of looping over all candidates?
-      double iso_mz = mz + (1.000857*(double)iso_pos + 0.001091) / (double)c; // TODO: confirm values, make variable
+      double iso_mz = mz + (1.000857*(double)iso_pos + 0.001091) / (double)z; // TODO: confirm values, make variable
       pair<double, double> mz_win = Math::getTolWindow(iso_mz, mz_tol_, mz_ppm_);
       for (vector<Size>::const_iterator it = candidate_indices.begin();
                                         it != candidate_indices.end();
@@ -674,6 +702,7 @@ void OptiQuantAlgorithm::updateMembers_()
   charge_high_ = (Size)(param_.getValue("charge_high"));
   require_first_n_traces_ = (Size)(param_.getValue("require_first_n_traces"));
   max_num_traces_ = (Size)(param_.getValue("max_num_traces"));
+  use_ids_ = (param_.getValue("use_ids").toString() == "true");
   solver_time_limit_ = param_.getValue("solver_time_limit");
 }
 
