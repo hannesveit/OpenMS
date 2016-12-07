@@ -636,9 +636,11 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
   for (vector<FeatureHypothesis>::const_iterator hypo_it = features.begin(); hypo_it != features.end(); ++hypo_it)
   {
     const FeatureHypothesis& hypo = *hypo_it;
-    map<Size, vector<double> > intensities_for_map_idx;
 
-    // cache feature intensities
+    // precompute feature m/z, RT, intensities
+    map<Size, vector<double> > intensities_for_map_idx;
+    map<Size, double> mz_for_map_idx;
+    map<Size, double> rt_for_map_idx;
     for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
     {
       Size iso_pos = it->first;
@@ -655,6 +657,13 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
           intensities_for_map_idx[map_idx] = vector<double>(max_num_traces_, 0.0);
         }
         intensities_for_map_idx[map_idx][iso_pos] = fh_it->getIntensity();
+
+        if (iso_pos == 0)
+        {
+          // set subfeature m/z and RT based on monoisotopic trace for this map index
+          mz_for_map_idx[map_idx] = fh_it->getMZ();
+          rt_for_map_idx[map_idx] = fh_it->getRT();
+        }
       }
     }
 
@@ -681,8 +690,18 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
       double summed_int = accumulate(iso_ints.begin(), iso_ints.end(), 0.0);
 
       BaseFeature f;
-      f.setMZ(mono_mt_cf.getMZ()); // TODO: use subfeature value
-      f.setRT(mono_mt_cf.getRT()); // TODO: use subfeature value
+      if (mz_for_map_idx.count(i) && rt_for_map_idx.count(i))
+      {
+        // monoisotopic trace found for map i, use its RT and m/z values
+        f.setMZ(mz_for_map_idx[i]);
+        f.setRT(rt_for_map_idx[i]);
+      }
+      else
+      {
+        // monoisotopic trace not found for map i, use values from consensus
+        f.setMZ(mono_mt_cf.getMZ());
+        f.setRT(mono_mt_cf.getRT());
+      }
       f.setCharge(hypo.getCharge());
       f.setIntensity(summed_int);
 
