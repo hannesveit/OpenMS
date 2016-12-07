@@ -89,11 +89,14 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map) :
   defaults_.setValue("charge_high", 5, "Highest charge state to consider");
   defaults_.setMinInt("charge_high", 1);
 
-  defaults_.setValue("require_first_n_traces", 3, "Do not consider feature hypotheses in which any of the first n isotope traces are missing (including the monoisotopic trace)");
+  defaults_.setValue("require_first_n_traces", 3, "Do not consider consensus feature hypotheses in which any of the first n isotope traces are missing across all maps (including the monoisotopic trace)");
   defaults_.setMinInt("require_first_n_traces", 1);
 
-  defaults_.setValue("max_num_traces", 6, "Search only for the first max_num_traces isotope traces");
-  defaults_.setMinInt("max_num_traces", 1);
+  defaults_.setValue("min_nr_traces_per_map", 2, "Ignore subfeatures with less than this many detected mass traces");
+  defaults_.setMinInt("min_nr_traces_per_map", 1);
+
+  defaults_.setValue("max_nr_traces", 6, "Search only for the first max_nr_traces isotope traces");
+  defaults_.setMinInt("max_nr_traces", 1);
 
   defaults_.setValue("require_monoiso", "true", "Include subfeature for map i only if the monoisotopic trace of this feature has been detected in map i");
   defaults_.setValidStrings("require_monoiso", ListUtils::create<String>("true,false"));
@@ -131,7 +134,7 @@ void OptiQuantAlgorithm::assembleFeatures_(vector<FeatureHypothesis>& features)
   double epsilon = 10e-7;
 
   // compute m/z window size
-  double mz_win_height = (1.000857*(double)max_num_traces_ + 0.001091) / (double)charge_low_; // TODO: confirm values, make variable
+  double mz_win_height = (1.000857*(double)max_nr_traces_ + 0.001091) / (double)charge_low_; // TODO: confirm values, make variable
 
   // collect feature hypotheses here
   vector<FeatureHypothesis> hypos;
@@ -196,7 +199,7 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
     hypo.addMassTrace(make_pair(0, mono_iso_mt_index));
     hypos_for_charge.push_back(hypo);
 
-    for (Size iso_pos = 1; iso_pos < max_num_traces_; ++iso_pos)
+    for (Size iso_pos = 1; iso_pos < max_nr_traces_; ++iso_pos)
     {
       vector<FeatureHypothesis> hypos_for_iso_pos;
 
@@ -582,7 +585,7 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
   double mol_weight = z * mz;
   map<Size, vector<double> > intensities_for_map_idx;
 
-  // cache feature intensities
+  // precompute feature intensities
   for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
   {
     Size iso_pos = it->first;
@@ -596,7 +599,7 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
       Size map_idx = fh_it->getMapIndex();
       if (!intensities_for_map_idx.count(map_idx))
       {
-        intensities_for_map_idx[map_idx] = vector<double>(max_num_traces_, 0.0);
+        intensities_for_map_idx[map_idx] = vector<double>(max_nr_traces_, 0.0);
       }
       intensities_for_map_idx[map_idx][iso_pos] = fh_it->getIntensity();
     }
@@ -608,6 +611,7 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
   {
     if (!intensities_for_map_idx.count(i))
     {
+      // no traces detected => this subfeature does not contribute to score
       continue;
     }
 
@@ -621,10 +625,16 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
     Size nr_detected_traces = 0;
     for (vector<double>::const_iterator it = iso_ints.begin(); it != iso_ints.end(); ++it)
     {
-      if (*it > 0)
+      if (*it > 0.0)
       {
         ++nr_detected_traces;
       }
+    }
+
+    if (nr_detected_traces < min_nr_traces_per_map_)
+    {
+      // too few traces found => this subfeature does not contribute to score
+      continue;
     }
 
     // compute averagine score
@@ -663,7 +673,7 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
         Size map_idx = fh_it->getMapIndex();
         if (!intensities_for_map_idx.count(map_idx))
         {
-          intensities_for_map_idx[map_idx] = vector<double>(max_num_traces_, 0.0);
+          intensities_for_map_idx[map_idx] = vector<double>(max_nr_traces_, 0.0);
         }
         intensities_for_map_idx[map_idx][iso_pos] = fh_it->getIntensity();
 
@@ -702,6 +712,21 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
         continue;
       }
 
+      Size nr_detected_traces = 0;
+      for (vector<double>::const_iterator it = iso_ints.begin(); it != iso_ints.end(); ++it)
+      {
+        if (*it > 0.0)
+        {
+          ++nr_detected_traces;
+        }
+      }
+
+      if (nr_detected_traces < min_nr_traces_per_map_)
+      {
+        // too few traces found => do not add subfeature for this map
+        continue;
+      }
+
       double summed_int = accumulate(iso_ints.begin(), iso_ints.end(), 0.0);
 
       BaseFeature f;
@@ -736,7 +761,8 @@ void OptiQuantAlgorithm::updateMembers_()
   charge_low_ = (Size)(param_.getValue("charge_low"));
   charge_high_ = (Size)(param_.getValue("charge_high"));
   require_first_n_traces_ = (Size)(param_.getValue("require_first_n_traces"));
-  max_num_traces_ = (Size)(param_.getValue("max_num_traces"));
+  min_nr_traces_per_map_ = (Size)(param_.getValue("min_nr_traces_per_map"));
+  max_nr_traces_ = (Size)(param_.getValue("max_nr_traces"));
   use_ids_ = (param_.getValue("use_ids").toString() == "true");
   require_monoiso_ = (param_.getValue("require_monoiso").toString() == "true");
   solver_time_limit_ = param_.getValue("solver_time_limit");

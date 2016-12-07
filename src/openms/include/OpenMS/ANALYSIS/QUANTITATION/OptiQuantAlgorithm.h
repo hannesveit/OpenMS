@@ -152,10 +152,13 @@ protected:
   UInt charge_high_;
 
   /// TODO
-  Size max_num_traces_;
+  Size max_nr_traces_;
 
   /// TODO
   Size require_first_n_traces_;
+
+  /// TODO
+  Size min_nr_traces_per_map_;
 
   /// TODO
   bool require_monoiso_;
