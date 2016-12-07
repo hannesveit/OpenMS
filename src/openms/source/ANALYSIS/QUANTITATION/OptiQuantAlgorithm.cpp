@@ -499,7 +499,7 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
     env.out() << "Solution value  = " << cplex.getObjValue() << endl;
     IloNumArray vals(env);
     cplex.getValues(vals, x);
-    for (Size i = 0; i < vals.getSize(); ++i)
+    for (Int i = 0; i < vals.getSize(); ++i)
     {
       if (vals[i] > 0.5)
       {
@@ -758,8 +758,8 @@ void OptiQuantAlgorithm::updateMembers_()
   rt_tol_secs_ = (double)(param_.getValue("rt_tol"));
   mz_tol_ = (double)(param_.getValue("mz_tol"));
   mz_ppm_ = (param_.getValue("mz_unit").toString() == "ppm");
-  charge_low_ = (Size)(param_.getValue("charge_low"));
-  charge_high_ = (Size)(param_.getValue("charge_high"));
+  charge_low_ = (Int)(param_.getValue("charge_low"));
+  charge_high_ = (Int)(param_.getValue("charge_high"));
   require_first_n_traces_ = (Size)(param_.getValue("require_first_n_traces"));
   min_nr_traces_per_map_ = (Size)(param_.getValue("min_nr_traces_per_map"));
   max_nr_traces_ = (Size)(param_.getValue("max_nr_traces"));

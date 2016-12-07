@@ -146,10 +146,10 @@ protected:
   bool mz_ppm_;
 
   /// TODO
-  UInt charge_low_;
+  Int charge_low_;
 
   /// TODO
-  UInt charge_high_;
+  Int charge_high_;
 
   /// TODO
   Size max_nr_traces_;
