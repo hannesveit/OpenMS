@@ -749,7 +749,10 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
       final_cf.insert(i, f);
     }
 
-    output_map.push_back(final_cf);
+    if (final_cf.size())
+    {
+      output_map.push_back(final_cf);
+    }
   }
 }
 
