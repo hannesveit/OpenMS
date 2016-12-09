@@ -807,7 +807,17 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
         if (include_unidentified_unassembled_traces_ || id_attached)
         {
           ConsensusFeature mt_cf((*input_map_)[i]);
-          mt_cf.setCharge(charge);
+          // transfer charge from peptide ID if present
+          if (charge != 0)
+          {
+            mt_cf.setCharge(charge);
+            typedef ConsensusFeature::HandleSetType HST;
+            const HST& subfeatures = mt_cf.getFeatures();
+            for (HST::iterator it = subfeatures.begin(); it != subfeatures.end(); ++it)
+            {
+              const_cast<FeatureHandle&>(*it).setCharge(charge);
+            }
+          }
           output_map.push_back(mt_cf);
         }
       }
