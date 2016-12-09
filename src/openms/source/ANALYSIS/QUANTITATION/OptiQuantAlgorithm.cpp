@@ -73,6 +73,7 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map) :
   input_map_ = &input_map;
   num_maps_ = input_map.getFileDescriptions().size();
   kd_data_.addFeatures(0, input_map, true);
+  mt_assembled_ = vector<Int>(input_map.size(), false);
 
   defaults_.setValue("mz_tol", 10.0, "m/z tolerance (in Da or ppm)");
   defaults_.setMinFloat("mz_tol", 0.0);
@@ -104,6 +105,9 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map) :
   defaults_.setValue("use_ids", "true", "If a mass trace has identifications attached, generate only hypotheses for the charge state(s) found in these peptide IDs when generating hypotheses for this (monoisotopic) mass trace.");
   defaults_.setValidStrings("use_ids", ListUtils::create<String>("true,false"));
 
+  defaults_.setValue("keep_unassembled_traces", "identified", "Include unassembled traces in the results? When set to 'identified', keep only those traces annotated with at least one peptide identification");
+  defaults_.setValidStrings("keep_unassembled_traces", ListUtils::create<String>("all,identified,none"));
+
   defaults_.setValue("solver_time_limit", -1, "CPLEX time limit (in seconds) for solving one cluster of contiguous hypotheses. No time limit when set to -1.");
 
   defaultsToParam_();
@@ -117,7 +121,7 @@ OptiQuantAlgorithm::~OptiQuantAlgorithm()
 
 void OptiQuantAlgorithm::run(ConsensusMap& output_map)
 {
-  // set parameters here instead of constructor (param_ now set)
+  // set parameters here instead of constructor (param_ is now set)
   kd_data_.setParameters(param_);
 
   // assemble consensus features
@@ -140,6 +144,8 @@ void OptiQuantAlgorithm::assembleFeatures_(vector<FeatureHypothesis>& features)
   vector<FeatureHypothesis> hypos;
   vector<vector<Size> > hypos_for_mt(kd_data_.size(), vector<Size>());
 
+  UInt progress = 0;
+  startProgress(0, kd_data_.size(), "generating hypotheses");
   for (Size i = 0; i < kd_data_.size(); ++i)
   {
     // reference m/z and RT of monoisotopic mass trace
@@ -155,7 +161,9 @@ void OptiQuantAlgorithm::assembleFeatures_(vector<FeatureHypothesis>& features)
 
     // add all hypotheses for monoisotopic masstrace i to hypos
     addHypotheses_(i, candidate_indices, hypos, hypos_for_mt);
+    setProgress(++progress);
   }
+  endProgress();
 
   resolveConflicts_(hypos, hypos_for_mt, features);
 }
@@ -278,6 +286,8 @@ void OptiQuantAlgorithm::resolveConflicts_(const vector<FeatureHypothesis>& hypo
   Size search_pos = 0;
 
   // BFS
+  UInt progress = 0;
+  startProgress(0, hypos.size(), "assembling consensus features");
   while (true)
   {
     bool finished = true;
@@ -318,9 +328,12 @@ void OptiQuantAlgorithm::resolveConflicts_(const vector<FeatureHypothesis>& hypo
       }
     }
 
-    // resolve conflicts in this cluster and add final features to result (IDEA: parallelize)
+    // resolve conflicts in this cluster and add final features to result
     resolveHypothesisCluster_(hypos, hypos_for_mt, current_hypo_cluster_indices, result);
+    progress += current_hypo_cluster_indices.size();
+    setProgress(progress);
   }
+  endProgress();
 }
 
 void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesis>& hypos, const vector<vector<Size> >& hypos_for_mt, const set<Size>& hypo_cluster_indices, vector<FeatureHypothesis>& result)
@@ -337,27 +350,27 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
     return;
   }
 
-  // ---------------------------------
-  double rt_max = 0;
-  double mz_max = 0;
-  double rt_min = 1e10;
-  double mz_min = 1e10;
+//  // ---------------------------------
+//  double rt_max = 0;
+//  double mz_max = 0;
+//  double rt_min = 1e10;
+//  double mz_min = 1e10;
 
-  for (set<Size>::const_iterator it = hypo_cluster_indices.begin(); it != hypo_cluster_indices.end(); ++it)
-  {
-    double mz = kd_data_.mz(hypos[*it].getMassTraces()[0].second);
-    double rt = kd_data_.rt(hypos[*it].getMassTraces()[0].second);
-    if (mz < mz_min) mz_min = mz;
-    if (rt < rt_min) rt_min = rt;
-    if (mz > mz_max) mz_max = mz;
-    if (rt > rt_max) rt_max = rt;
-  }
-  cout << "### Resolving hypothesis cluster of size " << n
-       << fixed << setprecision(2)
-       << " (mz = " << mz_min << " - " << mz_max
-       << "; rt = " << rt_min << " - " << rt_max
-       << ") ###" << endl;
-  // ---------------------------------
+//  for (set<Size>::const_iterator it = hypo_cluster_indices.begin(); it != hypo_cluster_indices.end(); ++it)
+//  {
+//    double mz = kd_data_.mz(hypos[*it].getMassTraces()[0].second);
+//    double rt = kd_data_.rt(hypos[*it].getMassTraces()[0].second);
+//    if (mz < mz_min) mz_min = mz;
+//    if (rt < rt_min) rt_min = rt;
+//    if (mz > mz_max) mz_max = mz;
+//    if (rt > rt_max) rt_max = rt;
+//  }
+//  cout << "### Resolving hypothesis cluster of size " << n
+//       << fixed << setprecision(2)
+//       << " (mz = " << mz_min << " - " << mz_max
+//       << "; rt = " << rt_min << " - " << rt_max
+//       << ") ###" << endl;
+//  // ---------------------------------
 
   vector<Size> hypo_indices(hypo_cluster_indices.begin(), hypo_cluster_indices.end());
 
@@ -483,6 +496,10 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
 
     // optimize
     IloCplex cplex(model);
+
+    // silence solver
+    cplex.setOut(env.getNullStream());
+
     if (solver_time_limit_ > 0)
     {
       cplex.setParam(IloCplex::TiLim, (double)solver_time_limit_);
@@ -494,16 +511,19 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
       env.error() << "Failed to optimize LP" << endl;
       throw(-1);
     }
+    //env.out() << "Solution status = " << cplex.getStatus() << endl;
+    //env.out() << "Solution value  = " << cplex.getObjValue() << endl;
 
-    env.out() << "Solution status = " << cplex.getStatus() << endl;
-    env.out() << "Solution value  = " << cplex.getObjValue() << endl;
+    // read solution values
     IloNumArray vals(env);
     cplex.getValues(vals, x);
     for (Int i = 0; i < vals.getSize(); ++i)
     {
       if (vals[i] > 0.5)
       {
-        result.push_back(hypos[hypo_indices[i]]);
+        // add final consensus feature to results
+        const FeatureHypothesis& h = hypos[hypo_indices[i]];
+        result.push_back(h);
       }
     }
   }
@@ -650,7 +670,7 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
   return summed_score;
 }
 
-void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& features, ConsensusMap& output_map) const
+void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& features, ConsensusMap& output_map)
 {
   for (vector<FeatureHypothesis>::const_iterator hypo_it = features.begin(); hypo_it != features.end(); ++hypo_it)
   {
@@ -751,7 +771,46 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
 
     if (final_cf.size())
     {
+      // add feature to output map
       output_map.push_back(final_cf);
+
+      // mark its mass traces assembled
+      const vector<pair<Size, Size> >& h_mts = hypo.getMassTraces();
+      for (Size j = 0; j < h_mts.size(); ++j)
+      {
+        mt_assembled_[h_mts[j].second] = true;
+      }
+    }
+  }
+
+  // add unassembled mass traces if requested
+  if (include_unassembled_traces_)
+  {
+    for (Size i = 0; i < input_map_->size(); ++i)
+    {
+      if (!mt_assembled_[i])
+      {
+        bool id_attached = false;
+        Int charge = 0;
+
+        const vector<PeptideIdentification>& pep_ids = (*input_map_)[i].getPeptideIdentifications();
+        if (pep_ids.size())
+        {
+          const vector<PeptideHit>& pep_hits = pep_ids[0].getHits();
+          if (pep_hits.size())
+          {
+            id_attached = true;
+            charge = pep_hits[0].getCharge();
+          }
+        }
+
+        if (include_unidentified_unassembled_traces_ || id_attached)
+        {
+          ConsensusFeature mt_cf((*input_map_)[i]);
+          mt_cf.setCharge(charge);
+          output_map.push_back(mt_cf);
+        }
+      }
     }
   }
 }
@@ -769,6 +828,8 @@ void OptiQuantAlgorithm::updateMembers_()
   use_ids_ = (param_.getValue("use_ids").toString() == "true");
   require_monoiso_ = (param_.getValue("require_monoiso").toString() == "true");
   solver_time_limit_ = param_.getValue("solver_time_limit");
+  include_unassembled_traces_ = (param_.getValue("keep_unassembled_traces").toString() != "none");
+  include_unidentified_unassembled_traces_ = (param_.getValue("keep_unassembled_traces").toString() == "all");
 }
 
 }

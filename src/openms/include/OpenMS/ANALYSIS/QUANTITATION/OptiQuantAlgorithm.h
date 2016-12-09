@@ -170,10 +170,19 @@ protected:
   Int solver_time_limit_;
 
   /// TODO
+  bool include_unassembled_traces_;
+
+  /// TODO
+  bool include_unidentified_unassembled_traces_;
+
+  /// TODO
   KDTreeFeatureMaps kd_data_;
 
   /// TODO
   const ConsensusMap* input_map_;
+
+  /// TODO
+  std::vector<Int> mt_assembled_;
 
   /// TODO
   void assembleFeatures_(std::vector<FeatureHypothesis>& features);
@@ -197,7 +206,7 @@ protected:
   double computeScore_(const FeatureHypothesis& hypo) const;
 
   /// TODO
-  void compileResults_(const std::vector<FeatureHypothesis>& features, ConsensusMap& output_map) const;
+  void compileResults_(const std::vector<FeatureHypothesis>& features, ConsensusMap& output_map);
 
   virtual void updateMembers_();
 };
