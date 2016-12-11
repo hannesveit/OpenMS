@@ -548,57 +548,15 @@ double OptiQuantAlgorithm::computeIntensityScore_(const std::vector<double>& hyp
   isodist.estimateFromPeptideWeight(mol_weight);
 
   std::vector<std::pair<Size, double> > averagine_dist = isodist.getContainer();
+  std::vector<double> averagine_ints;
 
-  double max_int(0.0);
-  double theo_max_int(0.0);
-
-  for (Size i = 0; i < hypo_ints.size(); ++i)
+  for (Size i = 0; i < averagine_dist.size(); ++i)
   {
-    if (hypo_ints[i] > max_int)
-    {
-      max_int = hypo_ints[i];
-    }
-
-    if (averagine_dist[i].second > theo_max_int)
-    {
-      theo_max_int = averagine_dist[i].second;
-    }
+    averagine_ints.push_back(averagine_dist[i].second);
   }
 
-  std::vector<double> averagine_ratios;
-  std::vector<double> detected_ratios;
-
-  for (Size i = 0; i < hypo_ints.size(); ++i)
-  {
-    averagine_ratios.push_back(averagine_dist[i].second / theo_max_int);
-    detected_ratios.push_back(hypo_ints[i] / max_int);
-  }
-
-  return computeCosineSim_(averagine_ratios, detected_ratios);
-}
-
-double OptiQuantAlgorithm::computeCosineSim_(const std::vector<double>& x, const std::vector<double>& y) const
-{
-  if (x.size() != y.size())
-  {
-    return 0.0;
-  }
-
-  double mixed_sum(0.0);
-  double x_squared_sum(0.0);
-  double y_squared_sum(0.0);
-
-
-  for (Size i = 0; i < x.size(); ++i)
-  {
-    mixed_sum += x[i] * y[i];
-    x_squared_sum += x[i] * x[i];
-    y_squared_sum += y[i] * y[i];
-  }
-
-  double denom(std::sqrt(x_squared_sum) * std::sqrt(y_squared_sum));
-
-  return (denom > 0.0) ? mixed_sum / denom : 0.0;
+  return 0.5 * (1.0 + OpenMS::Math::pearsonCorrelationCoefficient(hypo_ints.begin(), hypo_ints.end(),
+                                                                  averagine_ints.begin(), averagine_ints.end()));
 }
 
 double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
