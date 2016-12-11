@@ -559,6 +559,42 @@ double OptiQuantAlgorithm::computeIntensityScore_(const std::vector<double>& hyp
                                                           averagine_ints.begin(), averagine_ints.end()));
 }
 
+//double OptiQuantAlgorithm::computeMZScore_(const FeatureHypothesis& hypo) const
+//{
+//  Int z = hypo.getCharge();
+//  const vector<pair<Size, Size> >& masstraces = hypo.getMassTraces();
+
+//  if (masstraces.size() < 2)
+//  {
+//    return 0.0;
+//  }
+
+//  double monoiso_mz = 0.0;
+//  double mz = 0.0;
+//  double avg_deviation = 0.0;
+//  for (Size i = 0; i < masstraces.size(); ++i)
+//  {
+//    Size iso_pos = masstraces[i].first;
+//    Size mt_index = masstraces[i].second;
+//    mz = (*input_map_)[mt_index].getMZ();
+
+//    if (i == 0)
+//    {
+//      monoiso_mz = mz;
+//      continue;
+//    }
+
+//    avg_deviation += fabs(mz - (monoiso_mz + Constants::C13C12_MASSDIFF_U * (double)iso_pos / (double)z));
+//  }
+//  avg_deviation /= masstraces.size() - 1;
+
+//  pair<double, double> tol_window = Math::getTolWindow(mz, mz_tol_, mz_ppm_);
+//  double max_possible_deviation = (tol_window.second - tol_window.first) / 2.0;
+//  double mz_score = 1 - avg_deviation / max_possible_deviation;
+
+//  return mz_score;
+//}
+
 double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
 {
   double z = hypo.getCharge();
@@ -618,14 +654,12 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
       continue;
     }
 
-    // compute averagine score
+    // compute scores
     double averagine_score = computeIntensityScore_(iso_ints, mol_weight);
-
-    // weight by number of detected traces in map i
-    averagine_score *= (double)nr_detected_traces;
+    //double mz_score = computeMZScore_(hypo);
 
     // add to combined score
-    summed_score += averagine_score;
+    summed_score += (double)nr_detected_traces * averagine_score;
   }
 
   return summed_score;

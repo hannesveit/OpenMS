@@ -199,6 +199,9 @@ protected:
   /// TODO
   double computeIntensityScore_(const std::vector<double>& hypo_ints, const double& mol_weight) const;
 
+//  /// TODO
+//  double computeMZScore_(const FeatureHypothesis& hypo) const;
+
   /// TODO
   double computeScore_(const FeatureHypothesis& hypo) const;
 
