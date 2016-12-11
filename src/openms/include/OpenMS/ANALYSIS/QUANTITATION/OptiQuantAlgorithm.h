@@ -208,6 +208,9 @@ protected:
   /// TODO
   void compileResults_(const std::vector<FeatureHypothesis>& features, ConsensusMap& output_map);
 
+  /// TODO
+  void outputStatistics_(const ConsensusMap& cmap) const;
+
   virtual void updateMembers_();
 };
 

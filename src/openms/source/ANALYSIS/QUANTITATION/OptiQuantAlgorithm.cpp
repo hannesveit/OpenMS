@@ -130,6 +130,9 @@ void OptiQuantAlgorithm::run(ConsensusMap& output_map)
 
   // fill result map
   compileResults_(features, output_map);
+
+  // ouput some statistics
+  outputStatistics_(output_map);
 }
 
 void OptiQuantAlgorithm::assembleFeatures_(vector<FeatureHypothesis>& features)
@@ -807,22 +810,65 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
         if (include_unidentified_unassembled_traces_ || id_attached)
         {
           ConsensusFeature mt_cf((*input_map_)[i]);
-          // transfer charge from peptide ID if present
-          if (charge != 0)
-          {
-            mt_cf.setCharge(charge);
-            typedef ConsensusFeature::HandleSetType HST;
-            const HST& subfeatures = mt_cf.getFeatures();
-            for (HST::iterator it = subfeatures.begin(); it != subfeatures.end(); ++it)
-            {
-              const_cast<FeatureHandle&>(*it).setCharge(charge);
-            }
-          }
+//          // transfer charge from peptide ID if present
+//          if (charge != 0)
+//          {
+//            mt_cf.setCharge(charge);
+//            typedef ConsensusFeature::HandleSetType HST;
+//            const HST& subfeatures = mt_cf.getFeatures();
+//            for (HST::iterator it = subfeatures.begin(); it != subfeatures.end(); ++it)
+//            {
+//              const_cast<FeatureHandle&>(*it).setCharge(charge);
+//            }
+//          }
           output_map.push_back(mt_cf);
         }
       }
     }
   }
+}
+
+void OptiQuantAlgorithm::outputStatistics_(const ConsensusMap& cmap) const
+{
+  // some statistics
+  map<Size, UInt> num_consfeat_of_size;
+  map<Size, UInt> num_consfeat_with_id_of_size;
+  map<Size, UInt> num_unassembled_of_size;
+  Size total_num_id = 0;
+  Size total_num_unassembled = 0;
+
+  for (ConsensusMap::const_iterator cmit = cmap.begin();
+       cmit != cmap.end(); ++cmit)
+  {
+    Size size = cmit->size();
+    ++num_consfeat_of_size[size];
+    if (cmit->getPeptideIdentifications().size())
+    {
+      ++num_consfeat_with_id_of_size[size];
+      ++total_num_id;
+    }
+    if (cmit->getCharge() == 0)
+    {
+      ++num_unassembled_of_size[size];
+      ++total_num_unassembled;
+    }
+  }
+
+  LOG_INFO << "Number of consensus features:" << endl;
+  LOG_INFO << "                " << setw(6) << "total " << setw(6) << "ID'ed " << setw(6) << "unassembled" << endl;
+  for (map<Size, UInt>::reverse_iterator i = num_consfeat_of_size.rbegin();
+       i != num_consfeat_of_size.rend(); ++i)
+  {
+    Size size = i->first;
+    LOG_INFO << "  of size " << setw(2) << size << ": " << setw(6)
+             << i->second << " " << setw(6)
+             << num_consfeat_with_id_of_size[size] << " "
+             << setw(6) << num_unassembled_of_size[size]
+             << endl;
+  }
+  LOG_INFO << "  total:               " << setw(6) << cmap.size() << endl;
+  LOG_INFO << "  total identified:    " << setw(6) << total_num_id << endl;
+  LOG_INFO << "  total unassembled:   " << setw(6) << total_num_unassembled << endl;
 }
 
 void OptiQuantAlgorithm::updateMembers_()
