@@ -141,7 +141,7 @@ void OptiQuantAlgorithm::assembleFeatures_(vector<FeatureHypothesis>& features)
   double epsilon = 10e-7;
 
   // compute m/z window size
-  double mz_win_height = (1.000857*(double)max_nr_traces_ + 0.001091) / (double)charge_low_; // TODO: confirm values, make variable
+  double mz_win_height = Constants::C13C12_MASSDIFF_U * (double)max_nr_traces_ / (double)charge_low_;
 
   // collect feature hypotheses here
   vector<FeatureHypothesis> hypos;
@@ -215,7 +215,7 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
       vector<FeatureHypothesis> hypos_for_iso_pos;
 
       // TODO: speed up using tolerance window query instead of looping over all candidates?
-      double iso_mz = mz + (1.000857*(double)iso_pos + 0.001091) / (double)z; // TODO: confirm values, make variable
+      double iso_mz = mz + Constants::C13C12_MASSDIFF_U * (double)iso_pos / (double)z;
       pair<double, double> mz_win = Math::getTolWindow(iso_mz, mz_tol_, mz_ppm_);
       for (vector<Size>::const_iterator it = candidate_indices.begin();
                                         it != candidate_indices.end();
@@ -555,8 +555,8 @@ double OptiQuantAlgorithm::computeIntensityScore_(const std::vector<double>& hyp
     averagine_ints.push_back(averagine_dist[i].second);
   }
 
-  return 0.5 * (1.0 + OpenMS::Math::pearsonCorrelationCoefficient(hypo_ints.begin(), hypo_ints.end(),
-                                                                  averagine_ints.begin(), averagine_ints.end()));
+  return 0.5 * (1.0 + Math::pearsonCorrelationCoefficient(hypo_ints.begin(), hypo_ints.end(),
+                                                          averagine_ints.begin(), averagine_ints.end()));
 }
 
 double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
