@@ -473,7 +473,7 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
 
       // extract scores for hypotheses, add epsilon if scores are identical (HACK)
       // (SOS weights must be unique for CPLEX)
-      set<double> unique_weights_set;
+      set<UInt64> unique_weights_set;
       vector<double> unique_weights(mt_hypos.size());
       for (Size i = 0; i < mt_hypos.size(); ++i)
       {
@@ -482,8 +482,8 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
         double weight = scores[local_idx];
         // compute final score, making sure weights are unique:
         // if weight already taken, add small epsilons until unique
-        for (;unique_weights_set.count(weight); weight += 1e-6);
-        unique_weights_set.insert(weight);
+        for (;unique_weights_set.count((UInt64)(1e8 * weight)); weight += 1e-6);
+        unique_weights_set.insert((UInt64)(1e8 * weight));
         unique_weights[i] = weight;
       }
 
