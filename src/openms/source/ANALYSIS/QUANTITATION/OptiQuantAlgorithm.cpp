@@ -105,6 +105,9 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map) :
   defaults_.setValue("use_ids", "true", "If a mass trace has identifications attached, generate only hypotheses for the charge state(s) found in these peptide IDs when generating hypotheses for this (monoisotopic) mass trace.");
   defaults_.setValidStrings("use_ids", ListUtils::create<String>("true,false"));
 
+  defaults_.setValue("id_hypo_weight", 1.0, "Score weighting factor for hypotheses in which the monoisotopic mass trace is annotated with an identification. When set to 1, the ID is ignored and the hypothesis is scored as if it weren't there.");
+  defaults_.setMinFloat("id_hypo_weight", 1.0);
+
   defaults_.setValue("keep_unassembled_traces", "identified", "Include unassembled traces in the results? When set to 'identified', keep only those traces annotated with at least one peptide identification");
   defaults_.setValidStrings("keep_unassembled_traces", ListUtils::create<String>("all,identified,none"));
 
@@ -662,7 +665,14 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
     summed_score += (double)nr_detected_traces * averagine_score;
   }
 
-  return summed_score;
+  double final_score = summed_score;
+  if ((*input_map_)[hypo.getMassTraces()[0].second].getPeptideIdentifications().size())
+  {
+    // monoisotopic trace carries an identification
+    final_score *= id_hypo_weight_;
+  }
+
+  return final_score;
 }
 
 void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& features, ConsensusMap& output_map)
@@ -878,6 +888,7 @@ void OptiQuantAlgorithm::updateMembers_()
   solver_time_limit_ = param_.getValue("solver_time_limit");
   include_unassembled_traces_ = (param_.getValue("keep_unassembled_traces").toString() != "none");
   include_unidentified_unassembled_traces_ = (param_.getValue("keep_unassembled_traces").toString() == "all");
+  id_hypo_weight_ = (double)(param_.getValue("id_hypo_weight"));
 }
 
 }

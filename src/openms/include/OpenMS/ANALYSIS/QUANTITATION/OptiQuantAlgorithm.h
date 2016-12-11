@@ -176,6 +176,9 @@ protected:
   bool include_unidentified_unassembled_traces_;
 
   /// TODO
+  double id_hypo_weight_;
+
+  /// TODO
   KDTreeFeatureMaps kd_data_;
 
   /// TODO
