@@ -37,6 +37,7 @@
 #include <OpenMS/MATH/STATISTICS/BasicStatistics.h>
 #include <OpenMS/CHEMISTRY/EmpiricalFormula.h>
 #include <OpenMS/DATASTRUCTURES/ListUtils.h>
+#include <OpenMS/CONCEPT/Constants.h>
 
 #include <numeric>
 
@@ -56,7 +57,7 @@ namespace OpenMS
     defaults_.setValue("averagines:S", 0.00037525f, "Number of S atoms per Dalton of mass.", ListUtils::create<String>("advanced"));
     defaults_.setValue("isotope:trim_right_cutoff", 0.001, "Cutoff in averagine distribution, trailing isotopes below this relative intensity are not considered.", ListUtils::create<String>("advanced"));
     defaults_.setValue("isotope:maximum", 100, "Maximum isotopic rank to be considered.", ListUtils::create<String>("advanced"));
-    defaults_.setValue("isotope:distance", 1.000495, "Distance between consecutive isotopic peaks.", ListUtils::create<String>("advanced"));
+    defaults_.setValue("isotope:distance", Constants::C13C12_MASSDIFF_U, "Distance between consecutive isotopic peaks.", ListUtils::create<String>("advanced"));
 
 
     defaults_.setValue("isotope:mode:mode", "Gaussian", "Peak Shape used around each isotope peak.", ListUtils::create<String>("advanced"));
