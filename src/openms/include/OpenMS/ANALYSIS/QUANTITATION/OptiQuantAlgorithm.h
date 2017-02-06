@@ -155,6 +155,9 @@ protected:
   Size max_nr_traces_;
 
   /// TODO
+  double min_averagine_corr_;
+
+  /// TODO
   Size require_first_n_traces_;
 
   /// TODO

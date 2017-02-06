@@ -90,6 +90,10 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map) :
   defaults_.setValue("charge_high", 5, "Highest charge state to consider");
   defaults_.setMinInt("charge_high", 1);
 
+  defaults_.setValue("min_averagine_corr", 0.6, "Minimum averagine similarity score a hypothesis must have in order to be considered.");
+  defaults_.setMinFloat("min_averagine_corr", 0.0);
+  defaults_.setMaxFloat("min_averagine_corr", 1.0);
+
   defaults_.setValue("require_first_n_traces", 3, "Do not consider consensus feature hypotheses in which any of the first n isotope traces are missing across all maps (including the monoisotopic trace)");
   defaults_.setMinInt("require_first_n_traces", 1);
 
@@ -265,6 +269,33 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
       if (h.getMassTraces()[i].first != i)
       {
         // one of the first n isotope traces is missing => ignore this hypo
+        continue;
+      }
+    }
+    if (min_averagine_corr_ > 0.0)
+    {
+      double z = h.getCharge();
+      double mz = kd_data_.mz(h.getMassTraces()[0].second);
+      double mol_weight = z * mz;
+
+      vector<double> iso_ints = vector<double>(max_nr_traces_, 0.0);
+
+      for (vector<pair<Size, Size> >::const_iterator mt_it = h.getMassTraces().begin(); mt_it != h.getMassTraces().end(); ++mt_it)
+      {
+        Size iso_pos = mt_it->first;
+        Size mt_index = mt_it->second;
+        iso_ints[iso_pos] = kd_data_.intensity(mt_index);
+      }
+
+      double corr = computeIntensityScore_(iso_ints, mol_weight);
+
+      // TODO: remove
+      cout << corr << endl;
+      //
+
+      if (corr < min_averagine_corr_)
+      {
+        // bad correlation with averagine model
         continue;
       }
     }
@@ -880,6 +911,7 @@ void OptiQuantAlgorithm::updateMembers_()
   mz_ppm_ = (param_.getValue("mz_unit").toString() == "ppm");
   charge_low_ = (Int)(param_.getValue("charge_low"));
   charge_high_ = (Int)(param_.getValue("charge_high"));
+  min_averagine_corr_ = (double)(param_.getValue("min_averagine_corr"));
   require_first_n_traces_ = (Size)(param_.getValue("require_first_n_traces"));
   min_nr_traces_per_map_ = (Size)(param_.getValue("min_nr_traces_per_map"));
   max_nr_traces_ = (Size)(param_.getValue("max_nr_traces"));
