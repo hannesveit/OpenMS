@@ -529,6 +529,7 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
 
     // optimize
     IloCplex cplex(model);
+    cplex.setParam(IloCplex::Threads, threads_);
 
     // silence solver
     cplex.setOut(env.getNullStream());
@@ -902,6 +903,7 @@ void OptiQuantAlgorithm::outputStatistics_(const ConsensusMap& cmap) const
 
 void OptiQuantAlgorithm::updateMembers_()
 {
+  threads_ = (Int)(param_.getValue("threads"));
   rt_tol_secs_ = (double)(param_.getValue("rt_tol"));
   mz_tol_ = (double)(param_.getValue("mz_tol"));
   mz_ppm_ = (param_.getValue("mz_unit").toString() == "ppm");

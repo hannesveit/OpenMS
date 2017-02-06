@@ -133,6 +133,9 @@ public:
 
 protected:
 
+  /// Maximum number of parallel threads CPLEX is allowed to use
+  Int threads_;
+
   /// Number of maps
   Size num_maps_;
 
