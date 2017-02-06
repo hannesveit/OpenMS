@@ -289,10 +289,6 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
 
       double corr = computeIntensityScore_(iso_ints, mol_weight);
 
-      // TODO: remove
-      cout << corr << endl;
-      //
-
       if (corr < min_averagine_corr_)
       {
         // bad correlation with averagine model
