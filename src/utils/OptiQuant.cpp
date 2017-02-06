@@ -107,8 +107,7 @@ protected:
     // initialize algorithm
     Param p(getParam_());
     Param p_optiquant_algo = p.copy("algorithm:", true);
-    p_optiquant_algo.insert("", p.copy("threads"));
-    OptiQuantAlgorithm oq_algo(input_map);
+    OptiQuantAlgorithm oq_algo(input_map, (Int)(p.getValue("threads")));
     oq_algo.setParameters(p_optiquant_algo);
 
     // prepare output map

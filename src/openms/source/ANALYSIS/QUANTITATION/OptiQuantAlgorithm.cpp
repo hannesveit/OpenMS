@@ -66,11 +66,12 @@ using namespace std;
 namespace OpenMS
 {
 
-OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map) :
+OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_threads) :
   DefaultParamHandler("OptiQuantAlgorithm"),
   ProgressLogger()
 {
   input_map_ = &input_map;
+  threads_ = num_threads;
   num_maps_ = input_map.getFileDescriptions().size();
   kd_data_.addFeatures(0, input_map, true);
   mt_assembled_ = vector<Int>(input_map.size(), false);
@@ -903,7 +904,6 @@ void OptiQuantAlgorithm::outputStatistics_(const ConsensusMap& cmap) const
 
 void OptiQuantAlgorithm::updateMembers_()
 {
-  threads_ = (Int)(param_.getValue("threads"));
   rt_tol_secs_ = (double)(param_.getValue("rt_tol"));
   mz_tol_ = (double)(param_.getValue("mz_tol"));
   mz_ppm_ = (param_.getValue("mz_unit").toString() == "ppm");

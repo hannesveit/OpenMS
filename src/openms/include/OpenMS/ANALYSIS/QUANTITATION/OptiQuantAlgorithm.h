@@ -123,7 +123,7 @@ public:
   };
 
   /// Constructor
-  OptiQuantAlgorithm(const ConsensusMap& input_map = ConsensusMap());
+  OptiQuantAlgorithm(const ConsensusMap& input_map = ConsensusMap(), Int num_threads = 1);
 
   /// Default destructor
   virtual ~OptiQuantAlgorithm();
