@@ -82,17 +82,17 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
   defaults_.setValue("mz_unit", "ppm", "unit of m/z tolerance");
   defaults_.setValidStrings("mz_unit", ListUtils::create<String>("ppm,Da"));
 
-  defaults_.setValue("rt_tol", 20.0, "RT tolerance (in seconds)");
+  defaults_.setValue("rt_tol", 5.0, "RT tolerance (in seconds)");
   defaults_.setMinFloat("rt_tol", 0.0);
 
-  defaults_.setValue("charge_low", 2, "Lowest charge state to consider");
+  defaults_.setValue("charge_low", 1, "Lowest charge state to consider");
   defaults_.setMinInt("charge_low", 1);
 
   defaults_.setValue("charge_high", 5, "Highest charge state to consider");
   defaults_.setMinInt("charge_high", 1);
 
-  defaults_.setValue("min_averagine_corr", 0.6, "Minimum averagine similarity score a hypothesis must have in order to be considered.");
-  defaults_.setMinFloat("min_averagine_corr", 0.0);
+  defaults_.setValue("min_averagine_corr", 0.7, "Minimum Pearson correlation with averagine model a hypothesis must have in order to be considered.");
+  defaults_.setMinFloat("min_averagine_corr", -1.0);
   defaults_.setMaxFloat("min_averagine_corr", 1.0);
 
   defaults_.setValue("require_first_n_traces", 3, "Do not consider consensus feature hypotheses in which any of the first n isotope traces are missing across all maps (including the monoisotopic trace)");
@@ -101,7 +101,7 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
   defaults_.setValue("min_nr_traces_per_map", 2, "Ignore subfeatures with less than this many detected mass traces");
   defaults_.setMinInt("min_nr_traces_per_map", 1);
 
-  defaults_.setValue("max_nr_traces", 6, "Search only for the first max_nr_traces isotope traces");
+  defaults_.setValue("max_nr_traces", 6, "Consider only the first max_nr_traces isotope traces");
   defaults_.setMinInt("max_nr_traces", 1);
 
   defaults_.setValue("require_monoiso", "true", "Include subfeature for map i only if the monoisotopic trace of this feature has been detected in map i");
@@ -273,28 +273,26 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
         continue;
       }
     }
-    if (min_averagine_corr_ > 0.0)
+    // check correlation with averagine model
+    double z = h.getCharge();
+    double mz = kd_data_.mz(h.getMassTraces()[0].second);
+    double mol_weight = z * mz;
+
+    vector<double> iso_ints = vector<double>(max_nr_traces_, 0.0);
+
+    for (vector<pair<Size, Size> >::const_iterator mt_it = h.getMassTraces().begin(); mt_it != h.getMassTraces().end(); ++mt_it)
     {
-      double z = h.getCharge();
-      double mz = kd_data_.mz(h.getMassTraces()[0].second);
-      double mol_weight = z * mz;
+      Size iso_pos = mt_it->first;
+      Size mt_index = mt_it->second;
+      iso_ints[iso_pos] = kd_data_.intensity(mt_index);
+    }
 
-      vector<double> iso_ints = vector<double>(max_nr_traces_, 0.0);
+    double corr = computeIntensityScore_(iso_ints, mol_weight);
 
-      for (vector<pair<Size, Size> >::const_iterator mt_it = h.getMassTraces().begin(); mt_it != h.getMassTraces().end(); ++mt_it)
-      {
-        Size iso_pos = mt_it->first;
-        Size mt_index = mt_it->second;
-        iso_ints[iso_pos] = kd_data_.intensity(mt_index);
-      }
-
-      double corr = computeIntensityScore_(iso_ints, mol_weight);
-
-      if (corr < min_averagine_corr_)
-      {
-        // bad correlation with averagine model
-        continue;
-      }
+    if (corr < min_averagine_corr_)
+    {
+      // bad correlation with averagine model
+      continue;
     }
 
     // this will be h's index:
@@ -587,8 +585,8 @@ double OptiQuantAlgorithm::computeIntensityScore_(const std::vector<double>& hyp
     averagine_ints.push_back(averagine_dist[i].second);
   }
 
-  return 0.5 * (1.0 + Math::pearsonCorrelationCoefficient(hypo_ints.begin(), hypo_ints.end(),
-                                                          averagine_ints.begin(), averagine_ints.end()));
+  return Math::pearsonCorrelationCoefficient(hypo_ints.begin(), hypo_ints.end(),
+                                             averagine_ints.begin(), averagine_ints.end());
 }
 
 //double OptiQuantAlgorithm::computeMZScore_(const FeatureHypothesis& hypo) const
