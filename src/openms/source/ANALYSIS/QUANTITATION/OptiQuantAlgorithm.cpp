@@ -630,72 +630,22 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
   double z = hypo.getCharge();
   double mz = kd_data_.mz(hypo.getMassTraces()[0].second);
   double mol_weight = z * mz;
-  map<Size, vector<double> > intensities_for_map_idx;
 
-  // precompute feature intensities
+  // compute averagine score
+  vector<double> iso_ints = vector<double>(max_nr_traces_, 0.0);
   for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
   {
     Size iso_pos = it->first;
     Size mt_index = it->second;
-
-    const ConsensusFeature& mt_cf = (*input_map_)[mt_index];
-    const ConsensusFeature::HandleSetType& handles = mt_cf.getFeatures();
-
-    for (ConsensusFeature::HandleSetType::iterator fh_it = handles.begin(); fh_it != handles.end(); ++fh_it)
-    {
-      Size map_idx = fh_it->getMapIndex();
-      if (!intensities_for_map_idx.count(map_idx))
-      {
-        intensities_for_map_idx[map_idx] = vector<double>(max_nr_traces_, 0.0);
-      }
-      intensities_for_map_idx[map_idx][iso_pos] = fh_it->getIntensity();
-    }
+    iso_ints[iso_pos] = kd_data_.intensity(mt_index);
   }
+  double averagine_score = computeIntensityScore_(iso_ints, mol_weight);
 
-  double summed_score = 0.0;
-  // compute scores for all potential subfeatures
-  for (Size i = 0; i < num_maps_; ++i)
-  {
-    if (!intensities_for_map_idx.count(i))
-    {
-      // no traces detected => this subfeature does not contribute to score
-      continue;
-    }
+  double final_score = hypo.size() * averagine_score;
 
-    const vector<double>& iso_ints = intensities_for_map_idx[i];
-    if (require_monoiso_ && iso_ints[0] == 0.0)
-    {
-      // monoisotopic trace missing => this subfeature does not contribute to score
-      continue;
-    }
-
-    Size nr_detected_traces = 0;
-    for (vector<double>::const_iterator it = iso_ints.begin(); it != iso_ints.end(); ++it)
-    {
-      if (*it > 0.0)
-      {
-        ++nr_detected_traces;
-      }
-    }
-
-    if (nr_detected_traces < min_nr_traces_per_map_)
-    {
-      // too few traces found => this subfeature does not contribute to score
-      continue;
-    }
-
-    // compute scores
-    double averagine_score = computeIntensityScore_(iso_ints, mol_weight);
-    //double mz_score = computeMZScore_(hypo);
-
-    // add to combined score
-    summed_score += (double)nr_detected_traces * averagine_score;
-  }
-
-  double final_score = summed_score;
+  // optional weighting for hypos with identified monoisotopic trace
   if ((*input_map_)[hypo.getMassTraces()[0].second].getPeptideIdentifications().size())
   {
-    // monoisotopic trace carries an identification
     final_score *= id_hypo_weight_;
   }
 
