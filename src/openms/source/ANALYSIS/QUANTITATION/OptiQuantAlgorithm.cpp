@@ -287,7 +287,7 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
       iso_ints[iso_pos] = kd_data_.intensity(mt_index);
     }
 
-    double corr = computeIntensityScore_(iso_ints, mol_weight);
+    double corr = pearsonScore_(iso_ints, mol_weight);
 
     if (corr < min_averagine_corr_)
     {
@@ -572,7 +572,7 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
   env.end();
 }
 
-double OptiQuantAlgorithm::computeIntensityScore_(const std::vector<double>& hypo_ints, const double& mol_weight) const
+double OptiQuantAlgorithm::pearsonScore_(const std::vector<double>& hypo_ints, const double& mol_weight) const
 {
   IsotopeDistribution isodist(hypo_ints.size());
   isodist.estimateFromPeptideWeight(mol_weight);
@@ -589,41 +589,75 @@ double OptiQuantAlgorithm::computeIntensityScore_(const std::vector<double>& hyp
                                              averagine_ints.begin(), averagine_ints.end());
 }
 
-//double OptiQuantAlgorithm::computeMZScore_(const FeatureHypothesis& hypo) const
-//{
-//  Int z = hypo.getCharge();
-//  const vector<pair<Size, Size> >& masstraces = hypo.getMassTraces();
+double OptiQuantAlgorithm::computeMZScore_(const FeatureHypothesis& hypo) const
+{
+  Int z = hypo.getCharge();
+  const vector<pair<Size, Size> >& masstraces = hypo.getMassTraces();
 
-//  if (masstraces.size() < 2)
-//  {
-//    return 0.0;
-//  }
+  if (masstraces.size() < 2)
+  {
+    return 0.0;
+  }
 
-//  double monoiso_mz = 0.0;
-//  double mz = 0.0;
-//  double avg_deviation = 0.0;
-//  for (Size i = 0; i < masstraces.size(); ++i)
-//  {
-//    Size iso_pos = masstraces[i].first;
-//    Size mt_index = masstraces[i].second;
-//    mz = (*input_map_)[mt_index].getMZ();
+  vector<double> mono_mzs;
+  for (Size i = 0; i < masstraces.size(); ++i)
+  {
+    Size iso_pos = masstraces[i].first;
+    Size mt_index = masstraces[i].second;
+    double mz = kd_data_.mz(mt_index);
+    double mono_mz = fabs(mz - Constants::C13C12_MASSDIFF_U * (double)iso_pos / (double)z);
+    mono_mzs.push_back(mono_mz);
+  }
 
-//    if (i == 0)
-//    {
-//      monoiso_mz = mz;
-//      continue;
-//    }
+  double median_mz = Math::median(mono_mzs.begin(), mono_mzs.end());
 
-//    avg_deviation += fabs(mz - (monoiso_mz + Constants::C13C12_MASSDIFF_U * (double)iso_pos / (double)z));
-//  }
-//  avg_deviation /= masstraces.size() - 1;
+  vector<double> absolute_devs;
+  for (Size i = 0; i < mono_mzs.size(); ++i)
+  {
+    absolute_devs.push_back(fabs(mono_mzs[i] - median_mz));
+  }
 
-//  pair<double, double> tol_window = Math::getTolWindow(mz, mz_tol_, mz_ppm_);
-//  double max_possible_deviation = (tol_window.second - tol_window.first) / 2.0;
-//  double mz_score = 1 - avg_deviation / max_possible_deviation;
+  double mad = Math::median(absolute_devs.begin(), absolute_devs.end());
 
-//  return mz_score;
-//}
+  pair<double, double> tol_window = Math::getTolWindow(median_mz, mz_tol_, mz_ppm_);
+  double max_possible_deviation = (tol_window.second - tol_window.first) / 2.0;
+  double mz_score = 1 - mad / max_possible_deviation;
+
+  return mz_score;
+}
+
+double OptiQuantAlgorithm::computeRTScore_(const FeatureHypothesis& hypo) const
+{
+  Int z = hypo.getCharge();
+  const vector<pair<Size, Size> >& masstraces = hypo.getMassTraces();
+
+  if (masstraces.size() < 2)
+  {
+    return 0.0;
+  }
+
+  vector<double> rts;
+  for (Size i = 0; i < masstraces.size(); ++i)
+  {
+    Size mt_index = masstraces[i].second;
+    rts.push_back(kd_data_.rt(mt_index));
+  }
+
+  double median_rt = Math::median(rts.begin(), rts.end());
+
+  vector<double> absolute_devs;
+  for (Size i = 0; i < rts.size(); ++i)
+  {
+    absolute_devs.push_back(fabs(rts[i] - median_rt));
+  }
+
+  double mad = Math::median(absolute_devs.begin(), absolute_devs.end());
+
+  double max_possible_deviation = rt_tol_secs_;
+  double rt_score = 1 - mad / max_possible_deviation;
+
+  return rt_score;
+}
 
 double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
 {
@@ -652,8 +686,9 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
     }
   }
 
-  double summed_score = 0.0;
   // compute scores for all potential subfeatures
+  double summed_score = 0.0;
+  Size total_nr_traces = 0;
   for (Size i = 0; i < num_maps_; ++i)
   {
     if (!intensities_for_map_idx.count(i))
@@ -669,35 +704,62 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
       continue;
     }
 
-    Size nr_detected_traces = 0;
+    Size nr_traces = 0;
     for (vector<double>::const_iterator it = iso_ints.begin(); it != iso_ints.end(); ++it)
     {
       if (*it > 0.0)
       {
-        ++nr_detected_traces;
+        ++nr_traces;
       }
     }
 
-    if (nr_detected_traces < min_nr_traces_per_map_)
+    if (nr_traces < min_nr_traces_per_map_)
     {
       // too few traces found => this subfeature does not contribute to score
       continue;
     }
 
-    // compute scores
-    double averagine_score = computeIntensityScore_(iso_ints, mol_weight);
-    //double mz_score = computeMZScore_(hypo);
+    // compute intensity score
+    double averagine_score = (1.0 + pearsonScore_(iso_ints, mol_weight)) / 2.0;
 
     // add to combined score
-    summed_score += (double)nr_detected_traces * averagine_score;
+    summed_score += (double)nr_traces * averagine_score;
+    total_nr_traces += nr_traces;
   }
+  // weighted average averagine similarity score (in [0,1])
+  double intensity_score = total_nr_traces ? summed_score / (double)total_nr_traces : 0.0;
 
-  double final_score = summed_score;
+  // size score (quadratic)
+  double size_score = (double)hypo.size() * (double)hypo.size()
+                      / ((double)max_nr_traces_ * (double)max_nr_traces_);
+
+  // m/z score
+  double mz_score = computeMZScore_(hypo);
+
+  // RT score
+  double rt_score = computeRTScore_(hypo);
+
+  // combined score
+  double combined_score = size_score * (intensity_score + mz_score + rt_score) / 3.0;
+
+  // upweight features with identified monoisotopic trace
+  double final_score = combined_score;
   if ((*input_map_)[hypo.getMassTraces()[0].second].getPeptideIdentifications().size())
   {
-    // monoisotopic trace carries an identification
     final_score *= id_hypo_weight_;
   }
+
+  //
+  cout << "M/Z:\t\t" << kd_data_.mz(hypo.getMassTraces()[0].second) << endl;
+  cout << "RT:\t\t" << kd_data_.rt(hypo.getMassTraces()[0].second) << endl;
+  cout << "Int score:\t" << intensity_score << endl;
+  cout << "M/Z score:\t" << mz_score << endl;
+  cout << "RT score:\t" << rt_score << endl;
+  cout << "Average:\t" << (intensity_score + mz_score + rt_score) / 3.0 << endl;
+  cout << "Size score:\t" << size_score << endl;
+  cout << "Combined score:\t" << combined_score << endl;
+  cout << "Final score:\t" << final_score << endl << endl;
+  //
 
   return final_score;
 }

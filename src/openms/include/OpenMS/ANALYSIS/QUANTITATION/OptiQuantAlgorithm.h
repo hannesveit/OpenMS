@@ -206,10 +206,13 @@ protected:
   void resolveHypothesisCluster_(const std::vector<FeatureHypothesis>& hypos, const std::vector<std::vector<Size> >& hypos_for_mt, const std::set<Size>& hypo_cluster_indices, std::vector<FeatureHypothesis>& result);
 
   /// TODO
-  double computeIntensityScore_(const std::vector<double>& hypo_ints, const double& mol_weight) const;
+  double pearsonScore_(const std::vector<double>& hypo_ints, const double& mol_weight) const;
 
-//  /// TODO
-//  double computeMZScore_(const FeatureHypothesis& hypo) const;
+  /// TODO
+  double computeMZScore_(const FeatureHypothesis& hypo) const;
+
+  /// TODO
+  double computeRTScore_(const FeatureHypothesis& hypo) const;
 
   /// TODO
   double computeScore_(const FeatureHypothesis& hypo) const;
