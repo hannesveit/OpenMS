@@ -98,6 +98,9 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
   defaults_.setValue("max_nr_traces", 6, "Consider only the first max_nr_traces isotope traces");
   defaults_.setMinInt("max_nr_traces", 1);
 
+  defaults_.setValue("quantify_top", 3, "In final intensity calculation, quantify only the top n most abundant (found across most maps) isotopic consensus traces per hypothesis. Ties are broken by abundance. If fewer traces are present, all of them are quantified. If set to 0, all traces are quantified.)");
+  defaults_.setMinInt("quantify_top", 0);
+
   defaults_.setValue("require_first_n_traces", 3, "Do not consider consensus feature hypotheses in which any of the first n isotope traces are missing across all maps (including the monoisotopic trace)");
   defaults_.setMinInt("require_first_n_traces", 1);
 
@@ -813,13 +816,17 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
     map<Size, vector<double> > intensities_for_map_idx;
     map<Size, double> mz_for_map_idx;
     map<Size, double> rt_for_map_idx;
+    vector<IsoTraceTuple> trace_picker;
+
     for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
     {
       Size iso_pos = it->first;
       Size mt_index = it->second;
-
       const ConsensusFeature& mt_cf = (*input_map_)[mt_index];
       const ConsensusFeature::HandleSetType& handles = mt_cf.getFeatures();
+
+      IsoTraceTuple itt = {iso_pos, handles.size(), mt_cf.getIntensity()};
+      trace_picker.push_back(itt);
 
       for (ConsensusFeature::HandleSetType::iterator fh_it = handles.begin(); fh_it != handles.end(); ++fh_it)
       {
@@ -837,6 +844,14 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
           rt_for_map_idx[map_idx] = fh_it->getRT();
         }
       }
+    }
+
+    // determine which consensus traces to use for quantification
+    sort(trace_picker.begin(), trace_picker.end());
+    vector<Size> quant_iso_positions;
+    for (Size i = 0; i < trace_picker.size() && (i < quantify_top_ || quantify_top_ == 0); ++i)
+    {
+      quant_iso_positions.push_back(trace_picker[i].iso_pos);
     }
 
     // construct consensus feature
@@ -880,7 +895,12 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
         continue;
       }
 
-      double summed_int = accumulate(iso_ints.begin(), iso_ints.end(), 0.0);
+      // compute overall intensity using selected traces
+      double summed_int = 0.0;
+      for (vector<Size>::const_iterator it = quant_iso_positions.begin(); it != quant_iso_positions.end(); ++it)
+      {
+        summed_int += iso_ints[*it];
+      }
 
       BaseFeature f;
       if (mz_for_map_idx.count(i) && rt_for_map_idx.count(i))
@@ -1027,6 +1047,7 @@ void OptiQuantAlgorithm::updateMembers_()
   score_rt_weight_ = (double)(param_.getValue("score:rt_weight"));
   score_denom_ = score_int_weight_ + score_mz_weight_ + score_rt_weight_;
   score_int_ignore_missing_ = (param_.getValue("score:int_ignore_missing").toString() == "true");
+  quantify_top_ = (Size)(param_.getValue("quantify_top"));
 }
 
 }

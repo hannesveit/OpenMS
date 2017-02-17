@@ -212,6 +212,9 @@ protected:
   bool score_int_ignore_missing_;
 
   /// TODO
+  Size quantify_top_;
+
+  /// TODO
   KDTreeFeatureMaps kd_data_;
 
   /// TODO
@@ -254,6 +257,28 @@ protected:
   void outputStatistics_(const ConsensusMap& cmap) const;
 
   virtual void updateMembers_();
+
+  /// TODO
+  struct IsoTraceTuple
+  {
+    Size iso_pos;
+    Size size;
+    double intensity;
+
+    bool operator<(const IsoTraceTuple& rhs) const
+    {
+      if (size > rhs.size)
+      {
+        return true;
+      }
+      else if (size == rhs.size)
+      {
+        return intensity > rhs.intensity;
+      }
+
+      return false;
+    }
+  };
 };
 
 }
