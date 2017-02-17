@@ -791,13 +791,13 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
   }
 
   //
-  cout << "M/Z:\t\t" << kd_data_.mz(hypo.getMassTraces()[0].second) << endl;
-  cout << "RT:\t\t" << kd_data_.rt(hypo.getMassTraces()[0].second) << endl;
-  cout << "Int score:\t" << int_score << endl;
-  cout << "M/Z score:\t" << mz_score << endl;
-  cout << "RT score:\t" << rt_score << endl;
-  cout << "Size score:\t" << size_score << endl;
-  cout << "Final score:\t" << final_score << endl << endl;
+//  cout << "M/Z:\t\t" << kd_data_.mz(hypo.getMassTraces()[0].second) << endl;
+//  cout << "RT:\t\t" << kd_data_.rt(hypo.getMassTraces()[0].second) << endl;
+//  cout << "Int score:\t" << int_score << endl;
+//  cout << "M/Z score:\t" << mz_score << endl;
+//  cout << "RT score:\t" << rt_score << endl;
+//  cout << "Size score:\t" << size_score << endl;
+//  cout << "Final score:\t" << final_score << endl << endl;
   //
 
   return final_score;
