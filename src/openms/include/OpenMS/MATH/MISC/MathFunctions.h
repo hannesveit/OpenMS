@@ -311,6 +311,22 @@ namespace OpenMS
       return std::make_pair(left, right);
     }
 
+    /*
+      @brief Compute the n-th power of x for non-negative integer n
+    */
+    inline static double pown(double x, UInt n)
+    {
+      if (n == 0) return 1.0;
+
+      double result = x;
+      for (UInt i = 1; i < n; ++i)
+      {
+        result *= x;
+      }
+
+      return result;
+    }
+
   } // namespace Math
 } // namespace OpenMS
 

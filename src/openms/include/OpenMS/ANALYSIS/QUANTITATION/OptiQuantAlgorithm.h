@@ -182,7 +182,31 @@ protected:
   bool include_unidentified_unassembled_traces_;
 
   /// TODO
-  double id_hypo_weight_;
+  UInt score_size_exp_;
+
+  /// TODO
+  UInt score_int_exp_;
+
+  /// TODO
+  double score_int_weight_;
+
+  /// TODO
+  UInt score_mz_exp_;
+
+  /// TODO
+  double score_mz_weight_;
+
+  /// TODO
+  UInt score_rt_exp_;
+
+  /// TODO
+  double score_rt_weight_;
+
+  /// TODO
+  double score_denom_;
+
+  /// TODO
+  double score_id_weight_;
 
   /// TODO
   KDTreeFeatureMaps kd_data_;
@@ -206,13 +230,16 @@ protected:
   void resolveHypothesisCluster_(const std::vector<FeatureHypothesis>& hypos, const std::vector<std::vector<Size> >& hypos_for_mt, const std::set<Size>& hypo_cluster_indices, std::vector<FeatureHypothesis>& result);
 
   /// TODO
-  double pearsonScore_(const std::vector<double>& hypo_ints, const double& mol_weight) const;
+  double averagineCorrelation_(const std::vector<std::pair<Size, double> >& hypo_int_pairs, const double& mol_weight) const;
 
   /// TODO
   double computeMZScore_(const FeatureHypothesis& hypo) const;
 
   /// TODO
   double computeRTScore_(const FeatureHypothesis& hypo) const;
+
+  /// TODO
+  double computeIntensityScore_(const FeatureHypothesis& hypo) const;
 
   /// TODO
   double computeScore_(const FeatureHypothesis& hypo) const;

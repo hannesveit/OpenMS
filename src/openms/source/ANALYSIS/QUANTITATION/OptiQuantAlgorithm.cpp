@@ -95,28 +95,51 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
   defaults_.setMinFloat("min_averagine_corr", -1.0);
   defaults_.setMaxFloat("min_averagine_corr", 1.0);
 
+  defaults_.setValue("max_nr_traces", 6, "Consider only the first max_nr_traces isotope traces");
+  defaults_.setMinInt("max_nr_traces", 1);
+
   defaults_.setValue("require_first_n_traces", 3, "Do not consider consensus feature hypotheses in which any of the first n isotope traces are missing across all maps (including the monoisotopic trace)");
   defaults_.setMinInt("require_first_n_traces", 1);
 
   defaults_.setValue("min_nr_traces_per_map", 2, "Ignore subfeatures with less than this many detected mass traces");
   defaults_.setMinInt("min_nr_traces_per_map", 1);
 
-  defaults_.setValue("max_nr_traces", 6, "Consider only the first max_nr_traces isotope traces");
-  defaults_.setMinInt("max_nr_traces", 1);
-
-  defaults_.setValue("require_monoiso", "true", "Include subfeature for map i only if the monoisotopic trace of this feature has been detected in map i");
-  defaults_.setValidStrings("require_monoiso", ListUtils::create<String>("true,false"));
-
-  defaults_.setValue("use_ids", "true", "If a mass trace has identifications attached, generate only hypotheses for the charge state(s) found in these peptide IDs when generating hypotheses for this (monoisotopic) mass trace.");
-  defaults_.setValidStrings("use_ids", ListUtils::create<String>("true,false"));
-
-  defaults_.setValue("id_hypo_weight", 1.0, "Score weighting factor for hypotheses in which the monoisotopic mass trace is annotated with an identification. When set to 1, the ID is ignored and the hypothesis is scored as if it weren't there.");
-  defaults_.setMinFloat("id_hypo_weight", 1.0);
-
   defaults_.setValue("keep_unassembled_traces", "identified", "Include unassembled traces in the results? When set to 'identified', keep only those traces annotated with at least one peptide identification");
   defaults_.setValidStrings("keep_unassembled_traces", ListUtils::create<String>("all,identified,none"));
 
-  defaults_.setValue("solver_time_limit", -1, "CPLEX time limit (in seconds) for solving one cluster of contiguous hypotheses. No time limit when set to -1.");
+  // advanced:
+
+  defaults_.setValue("require_monoiso", "true", "Include subfeature for map i only if the monoisotopic trace of this feature has been detected in map i", ListUtils::create<String>("advanced"));
+  defaults_.setValidStrings("require_monoiso", ListUtils::create<String>("true,false"));
+
+  defaults_.setValue("use_ids", "true", "If a mass trace has identifications attached, generate only hypotheses for the charge state(s) found in these peptide IDs when generating hypotheses for this (monoisotopic) mass trace.", ListUtils::create<String>("advanced"));
+  defaults_.setValidStrings("use_ids", ListUtils::create<String>("true,false"));
+
+  defaults_.setValue("score:size_exp", 2, "Exponent of the size component (number of isotope traces) in the overall hypothesis score", ListUtils::create<String>("advanced"));
+  defaults_.setMinInt("score:size_exp", 1);
+
+  defaults_.setValue("score:int_exp", 2, "Exponent of the intensity component (averagine similarity) in the overall hypothesis score", ListUtils::create<String>("advanced"));
+  defaults_.setMinInt("score:int_exp", 1);
+
+  defaults_.setValue("score:int_weight", 2.0, "Weighting factor of the intensity component (averagine similarity) in the overall hypothesis score", ListUtils::create<String>("advanced"));
+  defaults_.setMinFloat("score:int_weight", 0.0);
+
+  defaults_.setValue("score:mz_exp", 1, "Exponent of the m/z component (relative MAD of reconstructed monoisotopic m/z values based on all isotope traces) in the overall hypothesis score", ListUtils::create<String>("advanced"));
+  defaults_.setMinInt("score:mz_exp", 1);
+
+  defaults_.setValue("score:mz_weight", 1.0, "Weighting factor of the m/z component (relative MAD of reconstructed monoisotopic m/z values based on all isotope traces) in the overall hypothesis score", ListUtils::create<String>("advanced"));
+  defaults_.setMinFloat("score:mz_weight", 0.0);
+
+  defaults_.setValue("score:rt_exp", 1, "Exponent of the RT component (relative MAD of RT values of all isotope traces) in the overall hypothesis score", ListUtils::create<String>("advanced"));
+  defaults_.setMinInt("score:rt_exp", 1);
+
+  defaults_.setValue("score:rt_weight", 1.0, "Weighting factor of the RT component (relative MAD of RT values of all isotope traces) in the overall hypothesis score", ListUtils::create<String>("advanced"));
+  defaults_.setMinFloat("score:rt_weight", 0.0);
+
+  defaults_.setValue("score:id_weight", 1.0, "Weighting factor applied to final score for hypotheses in which the monoisotopic mass trace is annotated with an identification. When set to 1, the ID is ignored and the hypothesis is scored as if it weren't there.", ListUtils::create<String>("advanced"));
+  defaults_.setMinFloat("score:id_weight", 1.0);
+
+  defaults_.setValue("solver_time_limit", -1, "CPLEX time limit (in seconds) for solving one cluster of contiguous hypotheses. No time limit when set to -1.", ListUtils::create<String>("advanced"));
 
   defaultsToParam_();
 
@@ -278,16 +301,16 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
     double mz = kd_data_.mz(h.getMassTraces()[0].second);
     double mol_weight = z * mz;
 
-    vector<double> iso_ints = vector<double>(max_nr_traces_, 0.0);
+    vector<pair<Size, double> > iso_ints;
 
     for (vector<pair<Size, Size> >::const_iterator mt_it = h.getMassTraces().begin(); mt_it != h.getMassTraces().end(); ++mt_it)
     {
       Size iso_pos = mt_it->first;
       Size mt_index = mt_it->second;
-      iso_ints[iso_pos] = kd_data_.intensity(mt_index);
+      iso_ints.push_back(make_pair(iso_pos, kd_data_.intensity(mt_index)));
     }
 
-    double corr = pearsonScore_(iso_ints, mol_weight);
+    double corr = averagineCorrelation_(iso_ints, mol_weight);
 
     if (corr < min_averagine_corr_)
     {
@@ -572,17 +595,21 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
   env.end();
 }
 
-double OptiQuantAlgorithm::pearsonScore_(const std::vector<double>& hypo_ints, const double& mol_weight) const
+double OptiQuantAlgorithm::averagineCorrelation_(const vector<pair<Size, double> >& hypo_int_pairs, const double& mol_weight) const
 {
-  IsotopeDistribution isodist(hypo_ints.size());
+  IsotopeDistribution isodist(max_nr_traces_);
   isodist.estimateFromPeptideWeight(mol_weight);
+  vector<std::pair<Size, double> > averagine_dist = isodist.getContainer();
 
-  std::vector<std::pair<Size, double> > averagine_dist = isodist.getContainer();
-  std::vector<double> averagine_ints;
+  vector<double> hypo_ints;
+  vector<double> averagine_ints;
 
-  for (Size i = 0; i < averagine_dist.size(); ++i)
+  for (vector<pair<Size, double> >::const_iterator it = hypo_int_pairs.begin(); it != hypo_int_pairs.end(); ++it)
   {
-    averagine_ints.push_back(averagine_dist[i].second);
+    Size iso_index = it->first;
+    double hypo_int = it->second;
+    hypo_ints.push_back(hypo_int);
+    averagine_ints.push_back(averagine_dist[iso_index].second);
   }
 
   return Math::pearsonCorrelationCoefficient(hypo_ints.begin(), hypo_ints.end(),
@@ -610,14 +637,7 @@ double OptiQuantAlgorithm::computeMZScore_(const FeatureHypothesis& hypo) const
   }
 
   double median_mz = Math::median(mono_mzs.begin(), mono_mzs.end());
-
-  vector<double> absolute_devs;
-  for (Size i = 0; i < mono_mzs.size(); ++i)
-  {
-    absolute_devs.push_back(fabs(mono_mzs[i] - median_mz));
-  }
-
-  double mad = Math::median(absolute_devs.begin(), absolute_devs.end());
+  double mad = Math::MAD(mono_mzs.begin(), mono_mzs.end(), median_mz);
 
   pair<double, double> tol_window = Math::getTolWindow(median_mz, mz_tol_, mz_ppm_);
   double max_possible_deviation = (tol_window.second - tol_window.first) / 2.0;
@@ -644,14 +664,7 @@ double OptiQuantAlgorithm::computeRTScore_(const FeatureHypothesis& hypo) const
   }
 
   double median_rt = Math::median(rts.begin(), rts.end());
-
-  vector<double> absolute_devs;
-  for (Size i = 0; i < rts.size(); ++i)
-  {
-    absolute_devs.push_back(fabs(rts[i] - median_rt));
-  }
-
-  double mad = Math::median(absolute_devs.begin(), absolute_devs.end());
+  double mad = Math::MAD(rts.begin(), rts.end(), median_rt);
 
   double max_possible_deviation = rt_tol_secs_;
   double rt_score = 1 - mad / max_possible_deviation;
@@ -659,14 +672,14 @@ double OptiQuantAlgorithm::computeRTScore_(const FeatureHypothesis& hypo) const
   return rt_score;
 }
 
-double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
+double OptiQuantAlgorithm::computeIntensityScore_(const FeatureHypothesis& hypo) const
 {
   double z = hypo.getCharge();
   double mz = kd_data_.mz(hypo.getMassTraces()[0].second);
   double mol_weight = z * mz;
-  map<Size, vector<double> > intensities_for_map_idx;
 
-  // precompute feature intensities
+  // precompute subfeature trace intensities for all maps
+  map<Size, vector<pair<Size, double> > > intensities_for_map_idx;
   for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
   {
     Size iso_pos = it->first;
@@ -680,9 +693,9 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
       Size map_idx = fh_it->getMapIndex();
       if (!intensities_for_map_idx.count(map_idx))
       {
-        intensities_for_map_idx[map_idx] = vector<double>(max_nr_traces_, 0.0);
+        intensities_for_map_idx[map_idx] = vector<pair<Size, double> >();
       }
-      intensities_for_map_idx[map_idx][iso_pos] = fh_it->getIntensity();
+      intensities_for_map_idx[map_idx].push_back(make_pair(iso_pos, fh_it->getIntensity()));
     }
   }
 
@@ -697,21 +710,11 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
       continue;
     }
 
-    const vector<double>& iso_ints = intensities_for_map_idx[i];
-    if (require_monoiso_ && iso_ints[0] == 0.0)
-    {
-      // monoisotopic trace missing => this subfeature does not contribute to score
-      continue;
-    }
+    // iso-positions and intensities for map i
+    const vector<pair<Size, double> >& iso_ints = intensities_for_map_idx[i];
 
-    Size nr_traces = 0;
-    for (vector<double>::const_iterator it = iso_ints.begin(); it != iso_ints.end(); ++it)
-    {
-      if (*it > 0.0)
-      {
-        ++nr_traces;
-      }
-    }
+    // number of traces for map i
+    Size nr_traces = iso_ints.size();
 
     if (nr_traces < min_nr_traces_per_map_)
     {
@@ -719,45 +722,56 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
       continue;
     }
 
+    if (require_monoiso_ && iso_ints[0].first != 0)
+    {
+      // monoisotopic trace missing => this subfeature does not contribute to score
+      continue;
+    }
+
     // compute intensity score
-    double averagine_score = (1.0 + pearsonScore_(iso_ints, mol_weight)) / 2.0;
+    double averagine_score = (1.0 + averagineCorrelation_(iso_ints, mol_weight)) / 2.0;
 
     // add to combined score
     summed_score += (double)nr_traces * averagine_score;
     total_nr_traces += nr_traces;
   }
   // weighted average averagine similarity score (in [0,1])
-  double intensity_score = total_nr_traces ? summed_score / (double)total_nr_traces : 0.0;
+  double final_score = total_nr_traces ? summed_score / (double)total_nr_traces : 0.0;
 
-  // size score (quadratic)
-  double size_score = (double)hypo.size() * (double)hypo.size()
-                      / ((double)max_nr_traces_ * (double)max_nr_traces_);
+  return final_score;
+}
+
+double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
+{
+  // size score
+  double size_score = Math::pown((double)hypo.size() / (double)max_nr_traces_, score_size_exp_);
+
+  // Intensity score
+  double int_score = score_int_weight_ * Math::pown(computeIntensityScore_(hypo), score_int_exp_);
 
   // m/z score
-  double mz_score = computeMZScore_(hypo);
+  double mz_score = score_mz_weight_ * Math::pown(computeMZScore_(hypo), score_mz_exp_);
 
   // RT score
-  double rt_score = computeRTScore_(hypo);
+  double rt_score = score_rt_weight_ * Math::pown(computeRTScore_(hypo), score_rt_exp_);
 
   // combined score
-  double combined_score = size_score * (intensity_score + mz_score + rt_score) / 3.0;
+  double combined_score = size_score * (int_score + mz_score + rt_score) / score_denom_;
 
   // upweight features with identified monoisotopic trace
   double final_score = combined_score;
   if ((*input_map_)[hypo.getMassTraces()[0].second].getPeptideIdentifications().size())
   {
-    final_score *= id_hypo_weight_;
+    final_score *= score_id_weight_;
   }
 
   //
   cout << "M/Z:\t\t" << kd_data_.mz(hypo.getMassTraces()[0].second) << endl;
   cout << "RT:\t\t" << kd_data_.rt(hypo.getMassTraces()[0].second) << endl;
-  cout << "Int score:\t" << intensity_score << endl;
+  cout << "Int score:\t" << int_score << endl;
   cout << "M/Z score:\t" << mz_score << endl;
   cout << "RT score:\t" << rt_score << endl;
-  cout << "Average:\t" << (intensity_score + mz_score + rt_score) / 3.0 << endl;
   cout << "Size score:\t" << size_score << endl;
-  cout << "Combined score:\t" << combined_score << endl;
   cout << "Final score:\t" << final_score << endl << endl;
   //
 
@@ -978,7 +992,15 @@ void OptiQuantAlgorithm::updateMembers_()
   solver_time_limit_ = param_.getValue("solver_time_limit");
   include_unassembled_traces_ = (param_.getValue("keep_unassembled_traces").toString() != "none");
   include_unidentified_unassembled_traces_ = (param_.getValue("keep_unassembled_traces").toString() == "all");
-  id_hypo_weight_ = (double)(param_.getValue("id_hypo_weight"));
+  score_id_weight_ = (double)(param_.getValue("score:id_weight"));
+  score_size_exp_ = (UInt)(param_.getValue("score:size_exp"));
+  score_int_exp_ = (UInt)(param_.getValue("score:int_exp"));
+  score_int_weight_ = (double)(param_.getValue("score:int_weight"));
+  score_mz_exp_ = (UInt)(param_.getValue("score:mz_exp"));
+  score_mz_weight_ = (double)(param_.getValue("score:mz_weight"));
+  score_rt_exp_ = (UInt)(param_.getValue("score:rt_exp"));
+  score_rt_weight_ = (double)(param_.getValue("score:rt_weight"));
+  score_denom_ = score_int_weight_ + score_mz_weight_ + score_rt_weight_;
 }
 
 }
