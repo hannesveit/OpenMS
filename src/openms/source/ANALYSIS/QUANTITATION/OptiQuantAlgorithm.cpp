@@ -91,9 +91,9 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
   defaults_.setValue("charge_high", 5, "Highest charge state to consider");
   defaults_.setMinInt("charge_high", 1);
 
-  defaults_.setValue("min_averagine_corr", 0.7, "Minimum Pearson correlation with averagine model a hypothesis must have in order to be considered.");
-  defaults_.setMinFloat("min_averagine_corr", -1.0);
-  defaults_.setMaxFloat("min_averagine_corr", 1.0);
+  defaults_.setValue("min_averagine_score", 0.85, "Minimum averagine similarity score a hypothesis must achieve in order to be considered.");
+  defaults_.setMinFloat("min_averagine_score", 0.0);
+  defaults_.setMaxFloat("min_averagine_score", 1.0);
 
   defaults_.setValue("max_nr_traces", 6, "Consider only the first max_nr_traces isotope traces");
   defaults_.setMinInt("max_nr_traces", 1);
@@ -138,6 +138,11 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
 
   defaults_.setValue("score:id_weight", 1.0, "Weighting factor applied to final score for hypotheses in which the monoisotopic mass trace is annotated with an identification. When set to 1, the ID is ignored and the hypothesis is scored as if it weren't there.", ListUtils::create<String>("advanced"));
   defaults_.setMinFloat("score:id_weight", 1.0);
+
+  defaults_.setValue("score:int_ignore_missing", "false", "If true, averagine correlation is computed using only the isotopic traces that were found. If false, zero values are inserted at the missing positions.", ListUtils::create<String>("advanced"));
+  defaults_.setValidStrings("score:int_ignore_missing", ListUtils::create<String>("true,false"));
+
+  defaults_.setSectionDescription("score", "Parameters of the hypothesis scoring function: s = (s_size)^(e_size) * (w_int * (s_int)^(e_int) + w_mz * (s_mz)^(e_mz) + w_rt * (s_rt)^(e_rt)) / (w_int + w_mz + w_rt).");
 
   defaults_.setValue("solver_time_limit", -1, "CPLEX time limit (in seconds) for solving one cluster of contiguous hypotheses. No time limit when set to -1.", ListUtils::create<String>("advanced"));
 
@@ -297,24 +302,9 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
       }
     }
     // check correlation with averagine model
-    double z = h.getCharge();
-    double mz = kd_data_.mz(h.getMassTraces()[0].second);
-    double mol_weight = z * mz;
-
-    vector<pair<Size, double> > iso_ints;
-
-    for (vector<pair<Size, Size> >::const_iterator mt_it = h.getMassTraces().begin(); mt_it != h.getMassTraces().end(); ++mt_it)
+    if (computeIntensityScore_(h, true) < min_int_score_thresh_)
     {
-      Size iso_pos = mt_it->first;
-      Size mt_index = mt_it->second;
-      iso_ints.push_back(make_pair(iso_pos, kd_data_.intensity(mt_index)));
-    }
-
-    double corr = averagineCorrelation_(iso_ints, mol_weight);
-
-    if (corr < min_averagine_corr_)
-    {
-      // bad correlation with averagine model
+      // too bad
       continue;
     }
 
@@ -595,21 +585,42 @@ void OptiQuantAlgorithm::resolveHypothesisCluster_(const vector<FeatureHypothesi
   env.end();
 }
 
-double OptiQuantAlgorithm::averagineCorrelation_(const vector<pair<Size, double> >& hypo_int_pairs, const double& mol_weight) const
+double OptiQuantAlgorithm::averagineCorrelation_(const vector<pair<Size, double> >& hypo_int_pairs, const double& mol_weight, bool ignore_missing) const
 {
   IsotopeDistribution isodist(max_nr_traces_);
   isodist.estimateFromPeptideWeight(mol_weight);
-  vector<std::pair<Size, double> > averagine_dist = isodist.getContainer();
+  vector<pair<Size, double> > averagine_dist = isodist.getContainer();
 
   vector<double> hypo_ints;
   vector<double> averagine_ints;
 
-  for (vector<pair<Size, double> >::const_iterator it = hypo_int_pairs.begin(); it != hypo_int_pairs.end(); ++it)
+  if (ignore_missing)
   {
-    Size iso_index = it->first;
-    double hypo_int = it->second;
-    hypo_ints.push_back(hypo_int);
-    averagine_ints.push_back(averagine_dist[iso_index].second);
+    hypo_ints.reserve(hypo_int_pairs.size());
+    averagine_ints.reserve(hypo_int_pairs.size());
+    for (vector<pair<Size, double> >::const_iterator it = hypo_int_pairs.begin(); it != hypo_int_pairs.end(); ++it)
+    {
+      Size iso_index = it->first;
+      double hypo_int = it->second;
+      hypo_ints.push_back(hypo_int);
+      averagine_ints.push_back(averagine_dist[iso_index].second);
+    }
+  }
+  else
+  {
+    hypo_ints.resize(max_nr_traces_, 0.0);
+    for (vector<pair<Size, double> >::const_iterator it = hypo_int_pairs.begin(); it != hypo_int_pairs.end(); ++it)
+    {
+      Size iso_index = it->first;
+      double hypo_int = it->second;
+      hypo_ints[iso_index] = hypo_int;
+    }
+
+    averagine_ints.reserve(max_nr_traces_);
+    for (vector<pair<Size, double> >::const_iterator it = averagine_dist.begin(); it != averagine_dist.end(); ++it)
+    {
+      averagine_ints.push_back(it->second);
+    }
   }
 
   return Math::pearsonCorrelationCoefficient(hypo_ints.begin(), hypo_ints.end(),
@@ -672,72 +683,87 @@ double OptiQuantAlgorithm::computeRTScore_(const FeatureHypothesis& hypo) const
   return rt_score;
 }
 
-double OptiQuantAlgorithm::computeIntensityScore_(const FeatureHypothesis& hypo) const
+double OptiQuantAlgorithm::computeIntensityScore_(const FeatureHypothesis& hypo, bool consensus_only) const
 {
   double z = hypo.getCharge();
   double mz = kd_data_.mz(hypo.getMassTraces()[0].second);
   double mol_weight = z * mz;
+  double final_score(0.0);
 
-  // precompute subfeature trace intensities for all maps
-  map<Size, vector<pair<Size, double> > > intensities_for_map_idx;
-  for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
+  if (consensus_only)
   {
-    Size iso_pos = it->first;
-    Size mt_index = it->second;
-
-    const ConsensusFeature& mt_cf = (*input_map_)[mt_index];
-    const ConsensusFeature::HandleSetType& handles = mt_cf.getFeatures();
-
-    for (ConsensusFeature::HandleSetType::iterator fh_it = handles.begin(); fh_it != handles.end(); ++fh_it)
+    vector<pair<Size, double> > iso_ints;
+    for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
     {
-      Size map_idx = fh_it->getMapIndex();
-      if (!intensities_for_map_idx.count(map_idx))
+      Size iso_pos = it->first;
+      double intensity = kd_data_.intensity(it->second);
+      iso_ints.push_back(make_pair(iso_pos, intensity));
+    }
+    final_score = (1.0 + averagineCorrelation_(iso_ints, mol_weight, score_int_ignore_missing_));
+  }
+
+  else // compute weighted average averagine correlation for all subfeatures from different maps
+  {
+    // precompute subfeature trace intensities for all maps
+    map<Size, vector<pair<Size, double> > > intensities_for_map_idx;
+    for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
+    {
+      Size iso_pos = it->first;
+      Size mt_index = it->second;
+
+      const ConsensusFeature& mt_cf = (*input_map_)[mt_index];
+      const ConsensusFeature::HandleSetType& handles = mt_cf.getFeatures();
+
+      for (ConsensusFeature::HandleSetType::iterator fh_it = handles.begin(); fh_it != handles.end(); ++fh_it)
       {
-        intensities_for_map_idx[map_idx] = vector<pair<Size, double> >();
+        Size map_idx = fh_it->getMapIndex();
+        if (!intensities_for_map_idx.count(map_idx))
+        {
+          intensities_for_map_idx[map_idx] = vector<pair<Size, double> >();
+        }
+        intensities_for_map_idx[map_idx].push_back(make_pair(iso_pos, fh_it->getIntensity()));
       }
-      intensities_for_map_idx[map_idx].push_back(make_pair(iso_pos, fh_it->getIntensity()));
     }
+
+    // compute scores for all potential subfeatures
+    double summed_score = 0.0;
+    Size total_nr_traces = 0;
+    for (Size i = 0; i < num_maps_; ++i)
+    {
+      if (!intensities_for_map_idx.count(i))
+      {
+        // no traces detected => this subfeature does not contribute to score
+        continue;
+      }
+
+      // iso-positions and intensities for map i
+      const vector<pair<Size, double> >& iso_ints = intensities_for_map_idx[i];
+
+      // number of traces for map i
+      Size nr_traces = iso_ints.size();
+
+      if (nr_traces < min_nr_traces_per_map_)
+      {
+        // too few traces found => this subfeature does not contribute to score
+        continue;
+      }
+
+      if (require_monoiso_ && iso_ints[0].first != 0)
+      {
+        // monoisotopic trace missing => this subfeature does not contribute to score
+        continue;
+      }
+
+      // compute intensity score
+      double averagine_score = (1.0 + averagineCorrelation_(iso_ints, mol_weight, score_int_ignore_missing_)) / 2.0;
+
+      // add to combined score
+      summed_score += (double)nr_traces * averagine_score;
+      total_nr_traces += nr_traces;
+    }
+    // weighted average averagine similarity score (in [0,1])
+    final_score = total_nr_traces ? summed_score / (double)total_nr_traces : 0.0;
   }
-
-  // compute scores for all potential subfeatures
-  double summed_score = 0.0;
-  Size total_nr_traces = 0;
-  for (Size i = 0; i < num_maps_; ++i)
-  {
-    if (!intensities_for_map_idx.count(i))
-    {
-      // no traces detected => this subfeature does not contribute to score
-      continue;
-    }
-
-    // iso-positions and intensities for map i
-    const vector<pair<Size, double> >& iso_ints = intensities_for_map_idx[i];
-
-    // number of traces for map i
-    Size nr_traces = iso_ints.size();
-
-    if (nr_traces < min_nr_traces_per_map_)
-    {
-      // too few traces found => this subfeature does not contribute to score
-      continue;
-    }
-
-    if (require_monoiso_ && iso_ints[0].first != 0)
-    {
-      // monoisotopic trace missing => this subfeature does not contribute to score
-      continue;
-    }
-
-    // compute intensity score
-    double averagine_score = (1.0 + averagineCorrelation_(iso_ints, mol_weight)) / 2.0;
-
-    // add to combined score
-    summed_score += (double)nr_traces * averagine_score;
-    total_nr_traces += nr_traces;
-  }
-  // weighted average averagine similarity score (in [0,1])
-  double final_score = total_nr_traces ? summed_score / (double)total_nr_traces : 0.0;
-
   return final_score;
 }
 
@@ -983,7 +1009,7 @@ void OptiQuantAlgorithm::updateMembers_()
   mz_ppm_ = (param_.getValue("mz_unit").toString() == "ppm");
   charge_low_ = (Int)(param_.getValue("charge_low"));
   charge_high_ = (Int)(param_.getValue("charge_high"));
-  min_averagine_corr_ = (double)(param_.getValue("min_averagine_corr"));
+  min_int_score_thresh_ = (double)(param_.getValue("min_averagine_score"));
   require_first_n_traces_ = (Size)(param_.getValue("require_first_n_traces"));
   min_nr_traces_per_map_ = (Size)(param_.getValue("min_nr_traces_per_map"));
   max_nr_traces_ = (Size)(param_.getValue("max_nr_traces"));
@@ -1001,6 +1027,7 @@ void OptiQuantAlgorithm::updateMembers_()
   score_rt_exp_ = (UInt)(param_.getValue("score:rt_exp"));
   score_rt_weight_ = (double)(param_.getValue("score:rt_weight"));
   score_denom_ = score_int_weight_ + score_mz_weight_ + score_rt_weight_;
+  score_int_ignore_missing_ = (param_.getValue("score:int_ignore_missing").toString() == "true");
 }
 
 }

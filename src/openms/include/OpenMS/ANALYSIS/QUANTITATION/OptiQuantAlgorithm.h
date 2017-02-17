@@ -158,7 +158,7 @@ protected:
   Size max_nr_traces_;
 
   /// TODO
-  double min_averagine_corr_;
+  double min_int_score_thresh_;
 
   /// TODO
   Size require_first_n_traces_;
@@ -209,6 +209,9 @@ protected:
   double score_id_weight_;
 
   /// TODO
+  bool score_int_ignore_missing_;
+
+  /// TODO
   KDTreeFeatureMaps kd_data_;
 
   /// TODO
@@ -230,7 +233,7 @@ protected:
   void resolveHypothesisCluster_(const std::vector<FeatureHypothesis>& hypos, const std::vector<std::vector<Size> >& hypos_for_mt, const std::set<Size>& hypo_cluster_indices, std::vector<FeatureHypothesis>& result);
 
   /// TODO
-  double averagineCorrelation_(const std::vector<std::pair<Size, double> >& hypo_int_pairs, const double& mol_weight) const;
+  double averagineCorrelation_(const std::vector<std::pair<Size, double> >& hypo_int_pairs, const double& mol_weight, bool ignore_missing = false) const;
 
   /// TODO
   double computeMZScore_(const FeatureHypothesis& hypo) const;
@@ -239,7 +242,7 @@ protected:
   double computeRTScore_(const FeatureHypothesis& hypo) const;
 
   /// TODO
-  double computeIntensityScore_(const FeatureHypothesis& hypo) const;
+  double computeIntensityScore_(const FeatureHypothesis& hypo, bool consensus_only = false) const;
 
   /// TODO
   double computeScore_(const FeatureHypothesis& hypo) const;
