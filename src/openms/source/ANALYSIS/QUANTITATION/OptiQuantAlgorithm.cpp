@@ -659,7 +659,6 @@ double OptiQuantAlgorithm::computeMZScore_(const FeatureHypothesis& hypo) const
 
 double OptiQuantAlgorithm::computeRTScore_(const FeatureHypothesis& hypo) const
 {
-  Int z = hypo.getCharge();
   const vector<pair<Size, Size> >& masstraces = hypo.getMassTraces();
 
   if (masstraces.size() < 2)
