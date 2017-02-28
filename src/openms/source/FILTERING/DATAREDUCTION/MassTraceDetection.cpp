@@ -194,8 +194,7 @@ namespace OpenMS
     return;
   }
 
-
-  void MassTraceDetection::run(const MSExperiment<Peak1D>& input_exp, std::vector<MassTrace>& found_masstraces)
+  void MassTraceDetection::run(const MSExperiment<Peak1D>& input_exp, std::vector<MassTrace>& found_masstraces, const Size max_traces)
   {
     // make sure the output vector is empty
     found_masstraces.clear();
@@ -257,7 +256,7 @@ namespace OpenMS
     // Step 2: start extending mass traces beginning with the apex peak (go
     // through all peaks in order of decreasing intensity)
     // *********************************************************************
-    run_(chrom_apices, total_peak_count, work_exp, spec_offsets, found_masstraces);
+    run_(chrom_apices, total_peak_count, work_exp, spec_offsets, found_masstraces, max_traces);
 
     return;
   } // end of MassTraceDetection::run
@@ -266,7 +265,8 @@ namespace OpenMS
                                 const Size total_peak_count, 
                                 const MSExperiment<Peak1D>& work_exp, 
                                 const std::vector<Size>& spec_offsets,
-                                std::vector<MassTrace>& found_masstraces)
+                                std::vector<MassTrace>& found_masstraces,
+                                const Size max_traces)
   {
     boost::dynamic_bitset<> peak_visited(total_peak_count);
     Size trace_number(1);
@@ -297,10 +297,13 @@ namespace OpenMS
     this->startProgress(0, total_peak_count, "mass trace detection");
     Size peaks_detected(0);
 
+    Size peaks_conflict(0);
+    Size no_peak(0);
+
     for (MapIdxSortedByInt::const_reverse_iterator m_it = chrom_apices.rbegin(); m_it != chrom_apices.rend(); ++m_it)
     {
-      Size apex_scan_idx(m_it->second.first);
-      Size apex_peak_idx(m_it->second.second);
+      const Size & apex_scan_idx(m_it->second.first);
+      const Size & apex_peak_idx(m_it->second.second);
 
       if (peak_visited[spec_offsets[apex_scan_idx] + apex_peak_idx])
       {
@@ -315,7 +318,7 @@ namespace OpenMS
       Size trace_up_idx(apex_scan_idx);
       Size trace_down_idx(apex_scan_idx);
 
-      std::list<PeakType> current_trace;
+      std::deque<PeakType> current_trace; // TODO: make this a deque
       current_trace.push_back(apex_peak);
       std::vector<double> fwhms_mz; // peak-FWHM meta values of collected peaks
 
@@ -326,8 +329,9 @@ namespace OpenMS
 
       updateIterativeWeightedMeanMZ(apex_peak.getMZ(), apex_peak.getIntensity(), centroid_mz, prev_counter, prev_denom);
 
-      std::vector<std::pair<Size, Size> > gathered_idx;
+      std::deque<std::pair<Size, Size> > gathered_idx;
       gathered_idx.push_back(std::make_pair(apex_scan_idx, apex_peak_idx));
+
       if (fwhm_meta_idx != -1)
       {
         fwhms_mz.push_back(work_exp[apex_scan_idx].getFloatDataArrays()[fwhm_meta_idx][apex_peak_idx]);
@@ -367,8 +371,8 @@ namespace OpenMS
             double next_down_peak_mz = spec_trace_down[next_down_peak_idx].getMZ();
             double next_down_peak_int = spec_trace_down[next_down_peak_idx].getIntensity();
 
-            double right_bound = centroid_mz + 3 * ftl_sd;
-            double left_bound = centroid_mz - 3 * ftl_sd;
+            const double right_bound(centroid_mz + 3 * ftl_sd);
+            const double left_bound(centroid_mz - 3 * ftl_sd);
 
             if ((next_down_peak_mz <= right_bound) &&
                 (next_down_peak_mz >= left_bound) &&
@@ -388,15 +392,17 @@ namespace OpenMS
               }
               // Update the m/z mean of the current trace as we added a new peak
               updateIterativeWeightedMeanMZ(next_down_peak_mz, next_down_peak_int, centroid_mz, prev_counter, prev_denom);
-              gathered_idx.push_back(std::make_pair(trace_down_idx - 1, next_down_peak_idx));
+              gathered_idx.push_front(std::make_pair(trace_down_idx - 1, next_down_peak_idx));
 
               // Update the m/z variance dynamically
               if (reestimate_mt_sd_)           //  && (down_hitting_peak+1 > min_flank_scans))
               {
-                // if (ftl_t > min_fwhm_scans)
-                {
-                  updateWeightedSDEstimateRobust(next_peak, centroid_mz, ftl_sd, intensity_so_far);
-                }
+                updateWeightedSDEstimateRobust(next_peak, centroid_mz, ftl_sd, intensity_so_far);
+          
+                // limit sd (might grow indefinitly)
+                const double sd_limit = ((centroid_mz / 1e6) * 1.5 * mass_error_ppm_);
+                if (ftl_sd > sd_limit) ftl_sd = sd_limit;
+               // std::cout << "down: " << ftl_sd << std::endl;
               }
 
               ++down_hitting_peak;
@@ -404,6 +410,8 @@ namespace OpenMS
             }
             else
             {
+              if ((next_down_peak_mz < right_bound) || (next_down_peak_mz > left_bound)) ++no_peak;
+              if (peak_visited[spec_offsets[trace_down_idx - 1] + next_down_peak_idx]) ++peaks_conflict;
               ++conseq_missed_peak_down;
             }
 
@@ -445,8 +453,8 @@ namespace OpenMS
             double next_up_peak_mz = spec_trace_up[next_up_peak_idx].getMZ();
             double next_up_peak_int = spec_trace_up[next_up_peak_idx].getIntensity();
 
-            double right_bound = centroid_mz + 3 * ftl_sd;
-            double left_bound = centroid_mz - 3 * ftl_sd;
+            const double right_bound(centroid_mz + 3 * ftl_sd);
+            const double left_bound(centroid_mz - 3 * ftl_sd);
 
             if ((next_up_peak_mz <= right_bound) &&
                 (next_up_peak_mz >= left_bound) &&
@@ -469,10 +477,12 @@ namespace OpenMS
               // Update the m/z variance dynamically
               if (reestimate_mt_sd_)           //  && (up_hitting_peak+1 > min_flank_scans))
               {
-                // if (ftl_t > min_fwhm_scans)
-                {
-                  updateWeightedSDEstimateRobust(next_peak, centroid_mz, ftl_sd, intensity_so_far);
-                }
+                updateWeightedSDEstimateRobust(next_peak, centroid_mz, ftl_sd, intensity_so_far);
+
+                // limit sd (might grow indefinitly)
+                const double sd_limit = ((centroid_mz / 1e6) * 1.5 * mass_error_ppm_);
+                if (ftl_sd > sd_limit) ftl_sd = sd_limit;
+               // std::cout << "up: " << ftl_sd << std::endl;
               }
 
               ++up_hitting_peak;
@@ -482,6 +492,8 @@ namespace OpenMS
             else
             {
               ++conseq_missed_peak_up;
+              if ((next_up_peak_mz < right_bound) || (next_up_peak_mz > left_bound)) ++no_peak;
+              if (peak_visited[spec_offsets[trace_up_idx - 1] + next_up_peak_idx]) ++peaks_conflict;
             }
 
           }
@@ -506,8 +518,6 @@ namespace OpenMS
               toggle_up = false;
             }
           }
-
-
         }
 
       }
@@ -525,22 +535,91 @@ namespace OpenMS
       bool max_trace_criteria = (max_trace_length_ < 0.0 || rt_range < max_trace_length_);
       if (rt_range >= min_trace_length_ && max_trace_criteria && mt_quality >= min_sample_rate_)
       {
-        // std::cout << "T" << trace_number << "\t" << mt_quality << std::endl;
-
-        // mark all peaks as visited
-        for (Size i = 0; i < gathered_idx.size(); ++i)
-        {
-          peak_visited[spec_offsets[gathered_idx[i].first] +  gathered_idx[i].second] = true;
-        }
-
         // create new MassTrace object and store collected peaks from list current_trace
         MassTrace new_trace(current_trace);
         new_trace.updateWeightedMeanRT();
         new_trace.updateWeightedMeanMZ();
         if (!fwhms_mz.empty()) new_trace.fwhm_mz_avg = Math::median(fwhms_mz.begin(), fwhms_mz.end());
         new_trace.setQuantMethod(quant_method_);
-        //new_trace.setCentroidSD(ftl_sd);
         new_trace.updateWeightedMZsd();
+
+        // determine trace peaks outside of FWHM
+        // these don't contribute to the quantification value and can be safely optimized
+        new_trace.estimateFWHM(false, down_hitting_peak + 1); // start estimation at apex point
+        std::pair<Size, Size> fwhm_idx = new_trace.getFWHMborders();
+
+        // use flat vectors for faster processing
+        std::vector<double> mzs;
+        std::vector<double> rts;
+        std::vector<double> ints;
+        mzs.reserve(new_trace.getSize());
+        rts.reserve(new_trace.getSize());
+        ints.reserve(new_trace.getSize());
+
+        for (Size i = 0; i != new_trace.getSize(); ++i)
+        {
+          mzs.push_back(new_trace[i].getMZ());
+          rts.push_back(new_trace[i].getRT());
+          ints.push_back(new_trace[i].getIntensity());
+        }
+
+        double best_quality(1e10) ;
+
+        Size best_left(0), best_right(new_trace.getSize() - 1);
+        //std::cout << "Optimizing: " << best_quality << " at m/z " << new_trace.getCentroidMZ() << " rt: " << new_trace.getCentroidRT() << std::endl;
+        //std::cout << "left idx: " << fwhm_idx.first << " right: " << fwhm_idx.second << std::endl;
+        //std::cout << "size: " << new_trace.getSize() << std::endl;
+
+        for (int left = 0; left <= (int) fwhm_idx.first - 1; ++left) // TODO: can be most likely be calculated more efficient ;)
+        {
+          for (Size right = new_trace.getSize() - 1; right >= fwhm_idx.second + 1; --right)
+          {  
+            double int_sum(0), mean_rt(0), mean_mz(0), sd_mz(0);       
+            for (int i = left; i <= (int)right; ++i)
+            {
+              int_sum += ints[i];
+              mean_mz += ints[i] * mzs[i];
+              mean_rt += rts[i];
+            }
+            mean_mz /= int_sum; 
+            mean_rt /= (double)(right - left + 1);
+
+            for (int i = left; i <= (int)right; ++i)
+            {
+              sd_mz += ints[i] * std::exp(2 * std::log(std::abs(mzs[i] - mean_mz)));
+            }
+            sd_mz = std::sqrt(sd_mz) / std::sqrt(int_sum);
+                      
+            double quality = sd_mz; // TODO: maybe something more elaborate ;
+            //std::cout << "  current quality: " << quality << " left idx: " << left << " right: " << right  << std::endl;
+            if (quality < best_quality)
+            {
+              //std::cout << "  improved to: " << quality << " left idx: " << left << " right: " << right  << std::endl;
+              best_left = left;
+              best_right = right;
+              best_quality = quality;
+            }
+          }
+        }
+
+        // mark all peaks as visited
+        for (Size i = best_left; i <= best_right; ++i)
+        {          
+          peak_visited[spec_offsets[gathered_idx[i].first] + gathered_idx[i].second] = true;
+        }
+
+        // did we find a better solution?
+        if (best_left != 0 || best_right != new_trace.getSize() - 1)
+        {
+          // would be better if MassTrace could be constructed from begin, end forward iterators... TODO
+          std::vector<Peak2D> opt_points;
+          for (Size i = best_left; i <= best_right; ++i)
+          {
+            opt_points.push_back(new_trace[i]);
+          }
+          new_trace = MassTrace(opt_points);
+        }
+
         new_trace.setLabel("T" + String(trace_number));
         ++trace_number;
 
@@ -548,8 +627,15 @@ namespace OpenMS
 
         peaks_detected += new_trace.getSize();
         this->setProgress(peaks_detected);
+
+        // check if we already reached the (optional) maximum number of traces
+        if (max_traces > 0 && found_masstraces.size() == max_traces) break;
       }
     }
+
+    std::cout << "no peak encountered: " << no_peak << std::endl;
+    std::cout << "visited peak encountered: " << peaks_conflict << std::endl;
+    std::cout << "detected / total peaks in map: " << peaks_detected << "\t" << total_peak_count << std::endl;
 
     this->endProgress();
 
