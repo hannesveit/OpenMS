@@ -36,6 +36,7 @@
 
 #include <OpenMS/KERNEL/MSExperiment.h>
 #include <OpenMS/MATH/STATISTICS/StatisticFunctions.h>
+#include <OpenMS/MATH/MISC/MathFunctions.h>
 #include <OpenMS/DATASTRUCTURES/ListUtils.h>
 
 #include <vector>
@@ -203,6 +204,7 @@ namespace OpenMS
     // gather all peaks that are potential chromatographic peak apices
     //   - use work_exp for actual work (remove peaks below noise threshold)
     //   - store potential apices in chrom_apices
+    MSExperiment<Peak1D> pre_work_exp(input_exp);
     MSExperiment<Peak1D> work_exp;
     MapIdxSortedByInt chrom_apices;
 
@@ -215,7 +217,86 @@ namespace OpenMS
     // *********************************************************** //
     //  Step 1: Detecting potential chromatographic apices
     // *********************************************************** //
-    for (MSExperiment<Peak1D>::ConstIterator it = input_exp.begin(); it != input_exp.end(); ++it)
+
+    // Filter out peaks without isotopic neighbors
+    bool todo = true;
+    double ppm = 10;
+    if (todo)
+    {
+      // collect intensities from potential isotopic pairs
+      std::vector<double> iso_ints;
+
+      // consider up to charge 10 isotopic patterns
+      std::vector<double> mz_shifts;
+      for (Size z = 1; z <= 10; ++z)
+      {
+        for (Size n = 1; n <= 2; ++n)
+        {
+          Size gcd = Math::gcd(n, z);
+          double shift = (double)(n/gcd) / (double)(z / gcd) * Constants::C13C12_MASSDIFF_U;
+          if (std::find(mz_shifts.begin(), mz_shifts.end(), shift) == mz_shifts.end())
+          {
+            mz_shifts.push_back(shift);
+          }
+        }
+      }
+
+      Size peak_counter = 0;
+      Size remove_counter = 0;
+      for (Size i = 2; i < pre_work_exp.size() - 2; ++i)
+      {
+        std::vector<Size> indices;
+        for (Size j = 0; j != pre_work_exp[i].size(); ++j)
+        {
+          const double mz = pre_work_exp[i][j].getMZ();
+          const double intensity = pre_work_exp[i][j].getIntensity();
+
+          // keep all peaks that have some isotopic neighbors
+          double tol = Math::ppmToMass(ppm, mz);
+
+          for (std::vector<double>::const_iterator it = mz_shifts.begin(); it != mz_shifts.end(); ++it)
+          {
+            // isotopic peak to the left (or right)?
+            if (pre_work_exp[i].findNearest(mz - *it, tol) != -1)
+            {
+              // check if at least one above or below is present
+              if ( pre_work_exp[i + 1].findNearest(mz - *it, tol) != -1
+                   || pre_work_exp[i - 1].findNearest(mz - *it, tol) != -1
+                   || pre_work_exp[i + 2].findNearest(mz - *it, tol) != -1
+                   || pre_work_exp[i - 2].findNearest(mz - *it, tol) != -1
+                   )
+              {
+                iso_ints.push_back(intensity);
+                indices.push_back(j);
+                break;
+              }
+            }
+            else if (pre_work_exp[i].findNearest(mz + *it, tol) != -1)
+            {
+              if ( pre_work_exp[i + 1].findNearest(mz + *it, tol) != -1
+                   || pre_work_exp[i - 1].findNearest(mz + *it, tol) != -1
+                   || pre_work_exp[i + 2].findNearest(mz + *it, tol) != -1
+                   || pre_work_exp[i - 2].findNearest(mz + *it, tol) != -1
+                   )
+              {
+                iso_ints.push_back(intensity);
+                indices.push_back(j);
+                break;
+              }
+            }
+          }
+        }
+        pre_work_exp[i].select(indices); // filter all without isotopic peak
+        const Size npeaks(pre_work_exp[i].size());
+        remove_counter += npeaks - indices.size();
+        peak_counter += npeaks;
+      }
+      std::cout << "Prefiltering: filtered out " << remove_counter << " / ";
+      std::cout << peak_counter << " peaks without isotopic neighbors." << std::endl;
+    }
+
+    // filter points below noise threshold, collect potential chromatographic apices
+    for (MSExperiment<Peak1D>::ConstIterator it = pre_work_exp.begin(); it != pre_work_exp.end(); ++it)
     {
       // check if this is a MS1 survey scan
       if (it->getMSLevel() != 1) continue;
