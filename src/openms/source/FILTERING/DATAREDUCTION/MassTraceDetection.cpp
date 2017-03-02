@@ -223,9 +223,6 @@ namespace OpenMS
     double ppm = 10;
     if (todo)
     {
-      // collect intensities from potential isotopic pairs
-      std::vector<double> iso_ints;
-
       // consider up to charge 10 isotopic patterns
       std::vector<double> mz_shifts;
       for (Size z = 1; z <= 10; ++z)
@@ -249,7 +246,6 @@ namespace OpenMS
         for (Size j = 0; j != pre_work_exp[i].size(); ++j)
         {
           const double mz = pre_work_exp[i][j].getMZ();
-          const double intensity = pre_work_exp[i][j].getIntensity();
 
           // keep all peaks that have some isotopic neighbors
           double tol = Math::ppmToMass(ppm, mz);
@@ -266,7 +262,6 @@ namespace OpenMS
                    || pre_work_exp[i - 2].findNearest(mz - *it, tol) != -1
                    )
               {
-                iso_ints.push_back(intensity);
                 indices.push_back(j);
                 break;
               }
@@ -279,17 +274,17 @@ namespace OpenMS
                    || pre_work_exp[i - 2].findNearest(mz + *it, tol) != -1
                    )
               {
-                iso_ints.push_back(intensity);
                 indices.push_back(j);
                 break;
               }
             }
           }
         }
-        pre_work_exp[i].select(indices); // filter all without isotopic peak
         const Size npeaks(pre_work_exp[i].size());
         remove_counter += npeaks - indices.size();
         peak_counter += npeaks;
+
+        pre_work_exp[i].select(indices); // filter all without isotopic peak
       }
       std::cout << "Prefiltering: filtered out " << remove_counter << " / ";
       std::cout << peak_counter << " peaks without isotopic neighbors." << std::endl;
