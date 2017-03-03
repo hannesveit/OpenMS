@@ -656,22 +656,26 @@ double OptiQuantAlgorithm::computeMZScore_(const FeatureHypothesis& hypo) const
     return 0.0;
   }
 
-  vector<double> mono_mzs;
-  for (Size i = 0; i < masstraces.size(); ++i)
+  double mono_mz = kd_data_.mz(masstraces[0].second);
+  vector<double> mz_diffs;
+
+  for (Size i = 1; i < masstraces.size(); ++i)
   {
     Size iso_pos = masstraces[i].first;
     Size mt_index = masstraces[i].second;
     double mz = kd_data_.mz(mt_index);
-    double mono_mz = fabs(mz - Constants::C13C12_MASSDIFF_U * (double)iso_pos / (double)z);
-    mono_mzs.push_back(mono_mz);
+    double diff = (mz - mono_mz) / (double)iso_pos;
+    mz_diffs.push_back(diff);
   }
 
-  double median_mz = Math::median(mono_mzs.begin(), mono_mzs.end());
-  double mad = Math::MAD(mono_mzs.begin(), mono_mzs.end(), median_mz);
+  double median_diff = Math::median(mz_diffs.begin(), mz_diffs.end());
+  double mad = Math::MAD(mz_diffs.begin(), mz_diffs.end(), median_diff);
 
-  pair<double, double> tol_window = Math::getTolWindow(median_mz, mz_tol_, mz_ppm_);
-  double max_possible_deviation = (tol_window.second - tol_window.first) / 2.0;
-  double mz_score = 1 - mad / max_possible_deviation;
+  // approximate maximum possible diff for scaling to [0,1]
+  double max_possible_diff = 2.0 * (mz_ppm_ ? mz_tol_ * mono_mz / 1e6 : mz_tol_);
+  double mz_score = 1 - mad / max_possible_diff;
+  // rare, but possible (if isotopic mass difference re-estimation is enabled)
+  if (mz_score < 0.0) mz_score = 0.0;
 
   return mz_score;
 }
