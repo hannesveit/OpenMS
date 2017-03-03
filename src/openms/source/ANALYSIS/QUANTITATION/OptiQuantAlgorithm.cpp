@@ -112,6 +112,9 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
 
   // advanced:
 
+  defaults_.setValue("adaptive_iso_mass_diff", "true", "Re-estimate isotopic mass difference while collecting isotopic traces", ListUtils::create<String>("advanced"));
+  defaults_.setValidStrings("adaptive_iso_mass_diff", ListUtils::create<String>("true,false"));
+
   defaults_.setValue("require_monoiso", "true", "Include subfeature for map i only if the monoisotopic trace of this feature has been detected in map i", ListUtils::create<String>("advanced"));
   defaults_.setValidStrings("require_monoiso", ListUtils::create<String>("true,false"));
 
@@ -240,7 +243,7 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
 
   // generate hypotheses for all considered charge states
   double mz = kd_data_.mz(mono_iso_mt_index);
-  vector<FeatureHypothesis> new_hypos;
+  vector<FeatureHypothesis> tmp_hypos;
   for (set<Int>::const_iterator c_it = charges.begin(); c_it != charges.end(); ++c_it)
   {
     Int z = *c_it;
@@ -253,21 +256,34 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
     {
       vector<FeatureHypothesis> hypos_for_iso_pos;
 
-      // TODO: speed up using tolerance window query instead of looping over all candidates?
-      double iso_mz = mz + Constants::C13C12_MASSDIFF_U * (double)iso_pos / (double)z;
-      pair<double, double> mz_win = Math::getTolWindow(iso_mz, mz_tol_, mz_ppm_);
-      for (vector<Size>::const_iterator it = candidate_indices.begin();
-                                        it != candidate_indices.end();
-                                        ++it)
+      for (vector<FeatureHypothesis>::iterator h_it = hypos_for_charge.begin();
+           h_it != hypos_for_charge.end();
+           ++h_it)
       {
-        if (mz_win.first <= kd_data_.mz(*it) && kd_data_.mz(*it) <= mz_win.second)
+        double iso_mz = mz + h_it->getIsoMassDiff() * (double)iso_pos / (double)z;
+        pair<double, double> mz_win = Math::getTolWindow(iso_mz, mz_tol_, mz_ppm_);
+
+        for (vector<Size>::const_iterator it = candidate_indices.begin();
+             it != candidate_indices.end();
+             ++it)
         {
-          for (vector<FeatureHypothesis>::iterator h_it = hypos_for_charge.begin();
-                                                   h_it != hypos_for_charge.end();
-                                                   ++h_it)
+          if (mz_win.first <= kd_data_.mz(*it) && kd_data_.mz(*it) <= mz_win.second)
           {
-            FeatureHypothesis h(*h_it); // make new hypothesis
-            h.addMassTrace(make_pair(iso_pos, *it)); // append this compatible mass trace
+            // make new hypothesis
+            FeatureHypothesis h(*h_it);
+            h.addMassTrace(make_pair(iso_pos, *it));
+
+            // adapt isotopic mass difference for this hypo
+            if (adaptive_iso_mass_diff_)
+            {
+              // weighted average for existing and new iso traces
+              double new_diff = (h.size() - 1) * h.getIsoMassDiff();
+              new_diff += (kd_data_.mz(*it) - kd_data_.mz(h.getMassTraces()[0].second)) / (double)iso_pos * (double)z;
+              new_diff /= h.size();
+              h.setIsoMassDiff(new_diff);
+            }
+
+            // append this compatible mass trace
             hypos_for_iso_pos.push_back(h);
           }
         }
@@ -281,12 +297,12 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
 
     for (vector<FeatureHypothesis>::iterator it = hypos_for_charge.begin(); it != hypos_for_charge.end(); ++it)
     {
-      new_hypos.push_back(*it);
+      tmp_hypos.push_back(*it);
     }
   }
 
   //compile final set of hypotheses
-  for (vector<FeatureHypothesis>::iterator it = new_hypos.begin(); it != new_hypos.end(); ++it)
+  for (vector<FeatureHypothesis>::iterator it = tmp_hypos.begin(); it != tmp_hypos.end(); ++it)
   {
     const FeatureHypothesis& h = *it;
 
@@ -1048,6 +1064,7 @@ void OptiQuantAlgorithm::updateMembers_()
   score_denom_ = score_int_weight_ + score_mz_weight_ + score_rt_weight_;
   score_int_ignore_missing_ = (param_.getValue("score:int_ignore_missing").toString() == "true");
   quantify_top_ = (Size)(param_.getValue("quantify_top"));
+  adaptive_iso_mass_diff_ = (param_.getValue("adaptive_iso_mass_diff").toString() == "true");
 }
 
 }

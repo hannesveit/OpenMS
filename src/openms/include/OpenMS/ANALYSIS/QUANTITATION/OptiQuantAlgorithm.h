@@ -70,14 +70,16 @@ public:
 
     FeatureHypothesis(Int charge) :
       charge_(charge),
-      masstraces_()
+      masstraces_(),
+      iso_mass_diff_(Constants::C13C12_MASSDIFF_U)
     {
     }
 
     /// Copy constructor
     FeatureHypothesis(const FeatureHypothesis& rhs) :
       charge_(rhs.charge_),
-      masstraces_(rhs.masstraces_)
+      masstraces_(rhs.masstraces_),
+      iso_mass_diff_(rhs.iso_mass_diff_)
     {
     }
 
@@ -86,6 +88,7 @@ public:
     {
       charge_ = rhs.charge_;
       masstraces_ = rhs.masstraces_;
+      iso_mass_diff_ = rhs.iso_mass_diff_;
 
       return *this;
     }
@@ -110,6 +113,16 @@ public:
       return charge_;
     }
 
+    double getIsoMassDiff() const
+    {
+      return iso_mass_diff_;
+    }
+
+    void setIsoMassDiff(double diff)
+    {
+      iso_mass_diff_ = diff;
+    }
+
     Size size() const
     {
       return masstraces_.size();
@@ -119,6 +132,7 @@ public:
 
     Int charge_;
     std::vector<std::pair<Size, Size> > masstraces_; // pairs iso_pos / mass trace index
+    double iso_mass_diff_;
 
   };
 
@@ -222,6 +236,9 @@ protected:
 
   /// TODO
   std::vector<Int> mt_assembled_;
+
+  /// TODO
+  bool adaptive_iso_mass_diff_;
 
   /// TODO
   void assembleFeatures_(std::vector<FeatureHypothesis>& features);
