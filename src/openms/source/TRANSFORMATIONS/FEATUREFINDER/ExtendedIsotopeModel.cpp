@@ -37,7 +37,6 @@
 #include <OpenMS/CHEMISTRY/IsotopeDistribution.h>
 #include <OpenMS/CHEMISTRY/EmpiricalFormula.h>
 #include <OpenMS/DATASTRUCTURES/ListUtils.h>
-#include <OpenMS/CONCEPT/Constants.h>
 
 #include <numeric>
 
@@ -58,7 +57,7 @@ namespace OpenMS
 
     defaults_.setValue("isotope:trim_right_cutoff", 0.001, "Cutoff in averagine distribution, trailing isotopes below this relative intensity are not considered.", ListUtils::create<String>("advanced"));
     defaults_.setValue("isotope:maximum", 100, "Maximum isotopic rank to be considered.", ListUtils::create<String>("advanced"));
-    defaults_.setValue("isotope:distance", Constants::C13C12_MASSDIFF_U, "Distance between consecutive isotopic peaks.", ListUtils::create<String>("advanced"));
+    defaults_.setValue("isotope:distance", 1.000495, "Distance between consecutive isotopic peaks.", ListUtils::create<String>("advanced"));
     defaults_.setValue("isotope:stdev", 0.1, "Standard deviation of gaussian applied to the averagine isotopic pattern to simulate the inaccuracy of the mass spectrometer.", ListUtils::create<String>("advanced"));
     defaults_.setValue("charge", 1, "Charge state of the model.", ListUtils::create<String>("advanced"));
     defaults_.setValue("isotope:monoisotopic_mz", 1.0, "Monoisotopic m/z of the model.", ListUtils::create<String>("advanced"));
