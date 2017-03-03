@@ -112,6 +112,7 @@ private:
               std::vector<MassTrace> & found_masstraces);
 
     // parameter stuff
+    bool iso_prefilter_;
     double mass_error_ppm_;
     double noise_threshold_int_;
     double chrom_peak_snr_;

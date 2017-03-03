@@ -52,6 +52,9 @@ namespace OpenMS
   MassTraceDetection::MassTraceDetection() :
     DefaultParamHandler("MassTraceDetection"), ProgressLogger()
   {
+    defaults_.setValue("iso_prefilter", "true", "Prefilter noise by removing peaks without isotopic neighbors?");
+    defaults_.setValidStrings("iso_prefilter", ListUtils::create<String>("true,false"));
+
     defaults_.setValue("mass_error_ppm", 20.0, "Allowed mass deviation (in ppm).");
     defaults_.setValue("noise_threshold_int", 10.0, "Intensity threshold below which peaks are removed as noise.");
     defaults_.setValue("chrom_peak_snr", 3.0, "Minimum intensity above noise_threshold_int (signal-to-noise) a peak should have to be considered an apex.");
@@ -219,9 +222,7 @@ namespace OpenMS
     // *********************************************************** //
 
     // Filter out peaks without isotopic neighbors
-    bool todo = true;
-    double ppm = 10;
-    if (todo)
+    if (iso_prefilter_)
     {
       // consider up to charge 10 isotopic patterns
       std::vector<double> mz_shifts;
@@ -248,7 +249,7 @@ namespace OpenMS
           const double mz = pre_work_exp[i][j].getMZ();
 
           // keep all peaks that have some isotopic neighbors
-          double tol = Math::ppmToMass(ppm, mz);
+          double tol = Math::ppmToMass(mass_error_ppm_, mz);
 
           for (std::vector<double>::const_iterator it = mz_shifts.begin(); it != mz_shifts.end(); ++it)
           {
@@ -290,7 +291,7 @@ namespace OpenMS
       std::cout << peak_counter << " peaks without isotopic neighbors." << std::endl;
     }
 
-    // filter points below noise threshold, collect potential chromatographic apices
+    // filter peaks below noise threshold, collect potential chromatographic apices
     for (MSExperiment<Peak1D>::ConstIterator it = pre_work_exp.begin(); it != pre_work_exp.end(); ++it)
     {
       // check if this is a MS1 survey scan
@@ -633,6 +634,7 @@ namespace OpenMS
   
   void MassTraceDetection::updateMembers_()
   {
+    iso_prefilter_ = param_.getValue("iso_prefilter").toBool();
     mass_error_ppm_ = (double)param_.getValue("mass_error_ppm");
     noise_threshold_int_ = (double)param_.getValue("noise_threshold_int");
     chrom_peak_snr_ = (double)param_.getValue("chrom_peak_snr");
