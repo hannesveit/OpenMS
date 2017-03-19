@@ -721,7 +721,7 @@ double OptiQuantAlgorithm::computeIntensityScore_(const FeatureHypothesis& hypo,
       double intensity = kd_data_.intensity(it->second);
       iso_ints.push_back(make_pair(iso_pos, intensity));
     }
-    final_score = (1.0 + averagineCorrelation_(iso_ints, mol_weight, score_int_ignore_missing_));
+    final_score = (1.0 + averagineCorrelation_(iso_ints, mol_weight, score_int_ignore_missing_)) / 2.0;
   }
 
   else // compute weighted average averagine correlation for all subfeatures from different maps
