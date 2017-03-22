@@ -175,7 +175,10 @@ protected:
   double min_int_score_thresh_;
 
   /// TODO
-  Size require_first_n_traces_;
+  Int require_nm_n_;
+
+  /// TODO
+  Int require_nm_m_;
 
   /// TODO
   Size min_nr_traces_per_map_;
@@ -276,13 +279,13 @@ protected:
   virtual void updateMembers_();
 
   /// TODO
-  struct IsoTraceTuple
+  struct ConsensusTraceSorter
   {
     Size iso_pos;
     Size size;
     double intensity;
 
-    bool operator<(const IsoTraceTuple& rhs) const
+    bool operator<(const ConsensusTraceSorter& rhs) const
     {
       if (size > rhs.size)
       {

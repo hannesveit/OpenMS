@@ -101,8 +101,7 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
   defaults_.setValue("quantify_top", 3, "In final intensity calculation, quantify only the top n most abundant (found across most maps) isotopic consensus traces per hypothesis. Ties are broken by abundance. If fewer traces are present, all of them are quantified. If set to 0, all traces are quantified.)");
   defaults_.setMinInt("quantify_top", 0);
 
-  defaults_.setValue("require_first_n_traces", 3, "Do not consider consensus feature hypotheses in which any of the first n isotope traces are missing across all maps (including the monoisotopic trace)");
-  defaults_.setMinInt("require_first_n_traces", 1);
+  defaults_.setValue("require_n_out_of_first_m", "2/3", "Do not consider consensus feature hypotheses in which any of the first n out of m isotope traces are missing across all maps (including the monoisotopic trace)");
 
   defaults_.setValue("min_nr_traces_per_map", 2, "Ignore subfeatures with less than this many detected mass traces");
   defaults_.setMinInt("min_nr_traces_per_map", 1);
@@ -307,19 +306,32 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
     const FeatureHypothesis& h = *it;
 
     // filter out bad hypotheses
-    if (h.size() < require_first_n_traces_)
+    if (h.size() < require_nm_n_)
     {
       // too small
       continue;
     }
-    for (Size i = 0; i < require_first_n_traces_; ++i)
+
+    bool ok = false;
+    Int n = 0;
+    for (Int i = 0; i < require_nm_m_; ++i)
     {
-      if (h.getMassTraces()[i].first != i)
+      if (h.getMassTraces()[i].first < require_nm_m_)
       {
-        // one of the first n isotope traces is missing => ignore this hypo
-        continue;
+        ++n;
+      }
+      if (n >= require_nm_n_)
+      {
+        ok = true;
+        break;
       }
     }
+    if (!ok && require_nm_m_ > 0)
+    {
+      // fewer than n out of the first m traces present => ignore this hypo
+      continue;
+    }
+
     // check correlation with averagine model
     if (computeIntensityScore_(h, true) < min_int_score_thresh_)
     {
@@ -836,7 +848,7 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
     map<Size, vector<double> > intensities_for_map_idx;
     map<Size, double> mz_for_map_idx;
     map<Size, double> rt_for_map_idx;
-    vector<IsoTraceTuple> trace_picker;
+    vector<ConsensusTraceSorter> trace_picker;
 
     for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
     {
@@ -845,7 +857,7 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
       const ConsensusFeature& mt_cf = (*input_map_)[mt_index];
       const ConsensusFeature::HandleSetType& handles = mt_cf.getFeatures();
 
-      IsoTraceTuple itt = {iso_pos, handles.size(), mt_cf.getIntensity()};
+      ConsensusTraceSorter itt = {iso_pos, handles.size(), mt_cf.getIntensity()};
       trace_picker.push_back(itt);
 
       for (ConsensusFeature::HandleSetType::iterator fh_it = handles.begin(); fh_it != handles.end(); ++fh_it)
@@ -1046,17 +1058,39 @@ void OptiQuantAlgorithm::updateMembers_()
   rt_tol_secs_ = (double)(param_.getValue("rt_tol"));
   mz_tol_ = (double)(param_.getValue("mz_tol"));
   mz_ppm_ = (param_.getValue("mz_unit").toString() == "ppm");
+
   charge_low_ = (Int)(param_.getValue("charge_low"));
   charge_high_ = (Int)(param_.getValue("charge_high"));
+
   min_int_score_thresh_ = (double)(param_.getValue("min_averagine_score"));
-  require_first_n_traces_ = (Size)(param_.getValue("require_first_n_traces"));
   min_nr_traces_per_map_ = (Size)(param_.getValue("min_nr_traces_per_map"));
   max_nr_traces_ = (Size)(param_.getValue("max_nr_traces"));
-  use_ids_ = (param_.getValue("use_ids").toString() == "true");
+
+  bool fail = false;
+  StringList nm;
+  try
+  {
+    param_.getValue("require_n_out_of_first_m").toString().split("/", nm);
+    require_nm_n_ = nm.at(0).toInt();
+    require_nm_m_ = nm.at(1).toInt();
+  }
+  catch(...)
+  {
+    fail = true;
+  }
+  if (fail || nm.size() != 2 || require_nm_n_ < 0 ||
+      require_nm_m_ < 0 || require_nm_n_ > require_nm_m_ ||
+      require_nm_m_ > max_nr_traces_)
+  {
+    throw OpenMS::Exception::InvalidParameter(__FILE__, __LINE__, __FUNCTION__, "Parameter 'require_n_out_of_first_m' has invalid format. Should be 'n/m' where n and m are non-negative integers, n <= m, and m <= max_nr_traces.");
+  }
+
   require_monoiso_ = (param_.getValue("require_monoiso").toString() == "true");
+  use_ids_ = (param_.getValue("use_ids").toString() == "true");
   solver_time_limit_ = param_.getValue("solver_time_limit");
   include_unassembled_traces_ = (param_.getValue("keep_unassembled_traces").toString() != "none");
   include_unidentified_unassembled_traces_ = (param_.getValue("keep_unassembled_traces").toString() == "all");
+
   score_id_weight_ = (double)(param_.getValue("score:id_weight"));
   score_size_exp_ = (UInt)(param_.getValue("score:size_exp"));
   score_int_exp_ = (UInt)(param_.getValue("score:int_exp"));
@@ -1067,6 +1101,7 @@ void OptiQuantAlgorithm::updateMembers_()
   score_rt_weight_ = (double)(param_.getValue("score:rt_weight"));
   score_denom_ = score_int_weight_ + score_mz_weight_ + score_rt_weight_;
   score_int_ignore_missing_ = (param_.getValue("score:int_ignore_missing").toString() == "true");
+
   quantify_top_ = (Size)(param_.getValue("quantify_top"));
   adaptive_iso_mass_diff_ = (param_.getValue("adaptive_iso_mass_diff").toString() == "true");
 }
