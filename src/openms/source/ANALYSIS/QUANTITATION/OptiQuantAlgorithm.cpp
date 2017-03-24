@@ -857,8 +857,8 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
       const ConsensusFeature& mt_cf = (*input_map_)[mt_index];
       const ConsensusFeature::HandleSetType& handles = mt_cf.getFeatures();
 
-      ConsensusTraceSorter itt = {iso_pos, handles.size(), mt_cf.getIntensity()};
-      trace_picker.push_back(itt);
+      ConsensusTraceSorter tuple = {iso_pos, handles.size(), mt_cf.getIntensity()};
+      trace_picker.push_back(tuple);
 
       for (ConsensusFeature::HandleSetType::iterator fh_it = handles.begin(); fh_it != handles.end(); ++fh_it)
       {
