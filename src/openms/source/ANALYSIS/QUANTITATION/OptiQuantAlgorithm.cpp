@@ -317,9 +317,10 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
 
     bool ok = false;
     Int n = 0;
-    for (Int i = 0; i < require_nm_m_; ++i)
+    const vector<pair<Size, Size> >& mts = h.getMassTraces();
+    for (Int i = 0; i < require_nm_m_ && i < mts.size(); ++i)
     {
-      if (h.getMassTraces()[i].first < require_nm_m_)
+      if (mts[i].first < require_nm_m_)
       {
         ++n;
       }
