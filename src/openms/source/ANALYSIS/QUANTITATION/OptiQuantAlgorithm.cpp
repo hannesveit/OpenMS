@@ -98,8 +98,11 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
   defaults_.setValue("max_nr_traces", 6, "Consider only the first max_nr_traces isotope traces");
   defaults_.setMinInt("max_nr_traces", 1);
 
-  defaults_.setValue("quantify_top", 3, "In final intensity calculation, quantify only the top n most abundant (found across most maps) isotopic consensus traces per hypothesis. Ties are broken by abundance. If fewer traces are present, all of them are quantified. If set to 0, all traces are quantified.)");
+  defaults_.setValue("quantify_top", 3, "In final intensity calculation, quantify only the top n most abundant (found across most maps) isotopic consensus traces per hypothesis. Ties are broken either by intensity or by preferring traces whose intensity profiles across maps agree better with each other (see 'trace_preference' parameter). If fewer traces are present, all of them are quantified. If set to 0, all traces are quantified.)");
   defaults_.setMinInt("quantify_top", 0);
+
+  defaults_.setValue("trace_preference", "similarity", "Which criterion to use for breaking ties when selecting the 'quantify_top' mass traces for computation of the final feature intensity values. In 'intensity' mode, consensus mass traces with higher overall (average) intensity are preferred. In 'similarity' mode, traces whose intensity profiles across maps agree better with each other are preferred.");
+  defaults_.setValidStrings("trace_preference", ListUtils::create<String>("similarity,intensity"));
 
   defaults_.setValue("require_n_out_of_first_m", "2/3", "Do not consider consensus feature hypotheses in which any of the first n out of m isotope traces are missing across all maps (including the monoisotopic trace)");
 
@@ -850,15 +853,20 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
     map<Size, double> rt_for_map_idx;
     vector<ConsensusTraceSorter> trace_picker;
 
-    for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
+    for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin();
+         it != hypo.getMassTraces().end(); ++it)
     {
       Size iso_pos = it->first;
       Size mt_index = it->second;
       const ConsensusFeature& mt_cf = (*input_map_)[mt_index];
       const ConsensusFeature::HandleSetType& handles = mt_cf.getFeatures();
 
-      ConsensusTraceSorter tuple = {iso_pos, handles.size(), mt_cf.getIntensity()};
-      trace_picker.push_back(tuple);
+      if (!trace_preference_similarity_)
+      {
+        // trace preference criterion is 'intensity' => add tuples for sorting by intensity here
+        ConsensusTraceSorter tuple = {iso_pos, handles.size(), mt_cf.getIntensity(), 0.0, false};
+        trace_picker.push_back(tuple);
+      }
 
       for (ConsensusFeature::HandleSetType::iterator fh_it = handles.begin(); fh_it != handles.end(); ++fh_it)
       {
@@ -876,6 +884,12 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
           rt_for_map_idx[map_idx] = fh_it->getRT();
         }
       }
+    }
+
+    if (trace_preference_similarity_)
+    {
+      // trace preference criterion is 'similarity' => add tuples for sorting by similarity
+      addSimilarityBasedTracePickingTuples_(hypo, trace_picker);
     }
 
     // determine which consensus traces to use for quantification
@@ -1010,6 +1024,75 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
   }
 }
 
+void OptiQuantAlgorithm::addSimilarityBasedTracePickingTuples_(const FeatureHypothesis& hypo, vector<ConsensusTraceSorter>& trace_picker) const
+{
+  // compute normalized versions of consensus traces (same median)
+  vector<vector<double> > ctraces_normalized(max_nr_traces_, vector<double>(num_maps_, 0.0));
+  vector<vector<double> > ctraces_no_zeros(max_nr_traces_, vector<double>());
+
+  for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin();
+       it != hypo.getMassTraces().end(); ++it)
+  {
+    Size iso_pos = it->first;
+    Size mt_index = it->second;
+    const ConsensusFeature& mt_cf = (*input_map_)[mt_index];
+    const ConsensusFeature::HandleSetType& handles = mt_cf.getFeatures();
+    for (ConsensusFeature::HandleSetType::iterator fh_it = handles.begin(); fh_it != handles.end(); ++fh_it)
+    {
+      Size map_idx = fh_it->getMapIndex();
+      double inty = fh_it->getIntensity();
+      ctraces_normalized[iso_pos][map_idx] = inty;
+      ctraces_no_zeros[iso_pos].push_back(inty);
+    }
+  }
+
+  for (Size i = 0; i < max_nr_traces_; ++i)
+  {
+    // NOTE: Math::median apparently mutates its argument vector (ahem?!),
+    // but we use this vector only for computing the median, so that's fine here
+    vector<double>& ctnz = ctraces_no_zeros[i];
+    if (!ctnz.size()) continue;
+    double median = Math::median(ctnz.begin(), ctnz.end());
+    vector<double>& ct = ctraces_normalized[i];
+    for (vector<double>::iterator it = ct.begin(); it != ct.end(); ++it)
+    {
+      *it /= median;
+    }
+  }
+
+  // for each normalized consensus mass trace:
+  // compute average absolute distance to all others
+  vector<double> avg_dists(max_nr_traces_, 0.0);
+  for (Size i = 0; i < max_nr_traces_; ++i)
+  {
+    for (Size j = 0; j < max_nr_traces_; ++j)
+    {
+      if (i == j) continue;
+
+      double avg_dist_i_j = 0.0;
+      for (Size k = 0; k < num_maps_; ++k)
+      {
+        avg_dist_i_j += fabs(ctraces_normalized[i][k] - ctraces_normalized[j][k]);
+      }
+      avg_dist_i_j /= num_maps_;
+      avg_dists[i] += avg_dist_i_j;
+    }
+    avg_dists[i] /= max_nr_traces_ - 1;
+  }
+
+  // add sorting tuples with average distances
+  for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin();
+       it != hypo.getMassTraces().end(); ++it)
+  {
+    Size iso_pos = it->first;
+    Size mt_index = it->second;
+    const ConsensusFeature& mt_cf = (*input_map_)[mt_index];
+    const ConsensusFeature::HandleSetType& handles = mt_cf.getFeatures();
+    ConsensusTraceSorter tuple = {iso_pos, handles.size(), 0.0, avg_dists[iso_pos], true};
+    trace_picker.push_back(tuple);
+  }
+}
+
 void OptiQuantAlgorithm::outputStatistics_(const ConsensusMap& cmap) const
 {
   // some statistics
@@ -1103,6 +1186,7 @@ void OptiQuantAlgorithm::updateMembers_()
   score_int_ignore_missing_ = (param_.getValue("score:int_ignore_missing").toString() == "true");
 
   quantify_top_ = (Size)(param_.getValue("quantify_top"));
+  trace_preference_similarity_ = (param_.getValue("trace_preference").toString() == "similarity");
   adaptive_iso_mass_diff_ = (param_.getValue("adaptive_iso_mass_diff").toString() == "true");
 }
 

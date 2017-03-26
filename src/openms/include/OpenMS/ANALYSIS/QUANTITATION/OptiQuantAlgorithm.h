@@ -136,6 +136,37 @@ public:
 
   };
 
+  /// TODO
+  struct ConsensusTraceSorter
+  {
+    Size iso_pos;
+    Size size;
+    double intensity;
+    double avg_dist;
+    bool criterion_similarity;
+
+    bool operator<(const ConsensusTraceSorter& rhs) const
+    {
+      if (size > rhs.size)
+      {
+        return true;
+      }
+      else if (size == rhs.size)
+      {
+        if (criterion_similarity)
+        {
+          return avg_dist < rhs.avg_dist;
+        }
+        else // criterion is 'intensity'
+        {
+          return intensity > rhs.intensity;
+        }
+      }
+
+      return false;
+    }
+  };
+
   /// Constructor
   OptiQuantAlgorithm(const ConsensusMap& input_map = ConsensusMap(), Int num_threads = 1);
 
@@ -232,6 +263,9 @@ protected:
   Size quantify_top_;
 
   /// TODO
+  bool trace_preference_similarity_;
+
+  /// TODO
   KDTreeFeatureMaps kd_data_;
 
   /// TODO
@@ -274,31 +308,12 @@ protected:
   void compileResults_(const std::vector<FeatureHypothesis>& features, ConsensusMap& output_map);
 
   /// TODO
+  void addSimilarityBasedTracePickingTuples_(const FeatureHypothesis& hypo, std::vector<ConsensusTraceSorter>& trace_picker) const;
+
+  /// TODO
   void outputStatistics_(const ConsensusMap& cmap) const;
 
   virtual void updateMembers_();
-
-  /// TODO
-  struct ConsensusTraceSorter
-  {
-    Size iso_pos;
-    Size size;
-    double intensity;
-
-    bool operator<(const ConsensusTraceSorter& rhs) const
-    {
-      if (size > rhs.size)
-      {
-        return true;
-      }
-      else if (size == rhs.size)
-      {
-        return intensity > rhs.intensity;
-      }
-
-      return false;
-    }
-  };
 };
 
 }
