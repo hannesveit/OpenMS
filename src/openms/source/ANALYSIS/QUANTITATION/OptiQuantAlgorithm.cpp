@@ -82,7 +82,7 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
   defaults_.setValue("mz_unit", "ppm", "unit of m/z tolerance");
   defaults_.setValidStrings("mz_unit", ListUtils::create<String>("ppm,Da"));
 
-  defaults_.setValue("rt_tol", 5.0, "RT tolerance (in seconds)");
+  defaults_.setValue("rt_tol", 10.0, "RT tolerance (in seconds)");
   defaults_.setMinFloat("rt_tol", 0.0);
 
   defaults_.setValue("charge_low", 1, "Lowest charge state to consider");
@@ -98,18 +98,18 @@ OptiQuantAlgorithm::OptiQuantAlgorithm(const ConsensusMap& input_map, Int num_th
   defaults_.setValue("max_nr_traces", 6, "Consider only the first max_nr_traces isotope traces");
   defaults_.setMinInt("max_nr_traces", 1);
 
-  defaults_.setValue("quantify_top", 3, "In final intensity calculation, quantify only the top n most abundant (found across most maps) isotopic consensus traces per hypothesis. Ties are broken either by intensity or by preferring traces whose intensity profiles across maps agree better with each other (see 'trace_preference' parameter). If fewer traces are present, all of them are quantified. If set to 0, all traces are quantified.)");
+  defaults_.setValue("require_n_out_of_first_m", "2/2", "Do not consider consensus feature hypotheses in which any of the first n out of m isotope traces are missing across all maps (including the monoisotopic trace)");
+
+  defaults_.setValue("min_nr_traces_per_map", 2, "Ignore subfeatures with less than this many detected mass traces");
+  defaults_.setMinInt("min_nr_traces_per_map", 1);
+
+  defaults_.setValue("quantify_top", 2, "In final intensity calculation, quantify only the top n most abundant (found across most maps) isotopic consensus traces per hypothesis. Ties are broken either by intensity or by preferring traces whose intensity profiles across maps agree better with each other (see 'trace_preference' parameter). If fewer traces are present, all of them are quantified. If set to 0, all traces are quantified.)");
   defaults_.setMinInt("quantify_top", 0);
 
   defaults_.setValue("trace_preference", "similarity", "Which criterion to use for breaking ties when selecting the 'quantify_top' mass traces for computation of the final feature intensity values. In 'intensity' mode, consensus mass traces with higher overall (average) intensity are preferred. In 'similarity' mode, traces whose intensity profiles across maps agree better with each other are preferred.");
   defaults_.setValidStrings("trace_preference", ListUtils::create<String>("similarity,intensity"));
 
-  defaults_.setValue("require_n_out_of_first_m", "2/3", "Do not consider consensus feature hypotheses in which any of the first n out of m isotope traces are missing across all maps (including the monoisotopic trace)");
-
-  defaults_.setValue("min_nr_traces_per_map", 2, "Ignore subfeatures with less than this many detected mass traces");
-  defaults_.setMinInt("min_nr_traces_per_map", 1);
-
-  defaults_.setValue("keep_unassembled_traces", "identified", "Include unassembled traces in the results? When set to 'identified', keep only those traces annotated with at least one peptide identification");
+  defaults_.setValue("keep_unassembled_traces", "none", "Include unassembled traces in the results? When set to 'identified', keep only those traces annotated with at least one peptide identification");
   defaults_.setValidStrings("keep_unassembled_traces", ListUtils::create<String>("all,identified,none"));
 
   // advanced:
