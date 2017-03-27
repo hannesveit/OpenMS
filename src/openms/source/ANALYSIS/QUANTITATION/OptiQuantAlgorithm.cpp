@@ -980,29 +980,34 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
     // (in case, e.g., a +2 and +3 ID were mapped to the same monoisotopic trace)
     if (use_ids_)
     {
-      vector<PeptideIdentification>& ids = final_cf.getPeptideIdentifications();
-      if (ids.size() && ids[0].getHits().size())
+      const vector<PeptideIdentification>& ids = final_cf.getPeptideIdentifications();
+      vector<PeptideIdentification> cleaned_ids;
+
+      for (vector<PeptideIdentification>::const_iterator it = ids.begin(); it != ids.end(); ++it)
       {
-        for (vector<PeptideIdentification>::iterator it = ids.begin(); it != ids.end(); ++it)
+        const PeptideIdentification& pep_id = *it;
+        const vector<PeptideHit>& hits = pep_id.getHits();
+        vector<PeptideHit> cleaned_hits;
+        for (vector<PeptideHit>::const_iterator hit_it = hits.begin(); hit_it != hits.end(); ++hit_it)
         {
-          PeptideIdentification& pep_id = *it;
-          const vector<PeptideHit>& hits = pep_id.getHits();
-          vector<PeptideHit> cleaned_hits;
-          for (vector<PeptideHit>::const_iterator hit_it = hits.begin(); hit_it != hits.end(); ++hit_it)
+          const PeptideHit& hit = *hit_it;
+          if (hit.getCharge() == final_cf.getCharge())
           {
-            const PeptideHit& hit = *hit_it;
-            if (hit.getCharge() == final_cf.getCharge())
-            {
-              cleaned_hits.push_back(hit);
-            }
-            else
-            {
-              ++removed_id_counter;
-            }
+            cleaned_hits.push_back(hit);
           }
-          pep_id.setHits(cleaned_hits);
+          else
+          {
+            ++removed_id_counter;
+          }
+        }
+        if (cleaned_hits.size())
+        {
+          PeptideIdentification new_pep_id(pep_id);
+          new_pep_id.setHits(cleaned_hits);
+          cleaned_ids.push_back(new_pep_id);
         }
       }
+      final_cf.setPeptideIdentifications(cleaned_ids);
     }
 
     if (final_cf.size())
