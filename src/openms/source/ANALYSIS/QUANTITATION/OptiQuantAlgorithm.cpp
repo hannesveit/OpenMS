@@ -230,7 +230,11 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
       for (vector<PeptideHit>::const_iterator hit_it = hits.begin(); hit_it != hits.end(); ++hit_it)
       {
         const PeptideHit& hit = *hit_it;
-        charges.insert(hit.getCharge());
+        Int c = hit.getCharge();
+        if (charge_low_ <= c && c <= charge_high_)
+        {
+          charges.insert(c);
+        }
       }
     }
   }
@@ -844,6 +848,8 @@ double OptiQuantAlgorithm::computeScore_(const FeatureHypothesis& hypo) const
 
 void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& features, ConsensusMap& output_map)
 {
+  Size removed_id_counter = 0;
+
   for (vector<FeatureHypothesis>::const_iterator hypo_it = features.begin(); hypo_it != features.end(); ++hypo_it)
   {
     const FeatureHypothesis& hypo = *hypo_it;
@@ -906,6 +912,7 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
     const ConsensusFeature& mono_mt_cf = (*input_map_)[mono_mt_index];
 
     // copy-construct from monoisotopic consensus mass trace to set m/z, RT
+    // and keep identification(s) of the monoisotopic trace
     ConsensusFeature final_cf(mono_mt_cf);
     final_cf.setCharge(hypo.getCharge());
 
@@ -969,6 +976,35 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
       final_cf.insert(i, f);
     }
 
+    // now, after assembly, remove identifications that have the wrong charge state
+    // (in case, e.g., a +2 and +3 ID were mapped to the same monoisotopic trace)
+    if (use_ids_)
+    {
+      vector<PeptideIdentification>& ids = final_cf.getPeptideIdentifications();
+      if (ids.size() && ids[0].getHits().size())
+      {
+        for (vector<PeptideIdentification>::iterator it = ids.begin(); it != ids.end(); ++it)
+        {
+          PeptideIdentification& pep_id = *it;
+          const vector<PeptideHit>& hits = pep_id.getHits();
+          vector<PeptideHit> cleaned_hits;
+          for (vector<PeptideHit>::const_iterator hit_it = hits.begin(); hit_it != hits.end(); ++hit_it)
+          {
+            const PeptideHit& hit = *hit_it;
+            if (hit.getCharge() == final_cf.getCharge())
+            {
+              cleaned_hits.push_back(hit);
+            }
+            else
+            {
+              ++removed_id_counter;
+            }
+          }
+          pep_id.setHits(cleaned_hits);
+        }
+      }
+    }
+
     if (final_cf.size())
     {
       // add feature to output map
@@ -981,6 +1017,11 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
         mt_assembled_[h_mts[j].second] = true;
       }
     }
+  }
+
+  if (use_ids_ && removed_id_counter)
+  {
+    cout << "Removed " << removed_id_counter << " IDs because of wrong charge state after assembly." << endl;
   }
 
   // add unassembled mass traces if requested
