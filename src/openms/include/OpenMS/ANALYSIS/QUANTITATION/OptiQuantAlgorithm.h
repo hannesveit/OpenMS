@@ -206,10 +206,10 @@ protected:
   double min_int_score_thresh_;
 
   /// TODO
-  Int require_nm_n_;
+  Size require_nm_n_;
 
   /// TODO
-  Int require_nm_m_;
+  Size require_nm_m_;
 
   /// TODO
   Size min_nr_traces_per_map_;

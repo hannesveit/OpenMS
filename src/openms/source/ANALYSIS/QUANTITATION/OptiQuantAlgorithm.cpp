@@ -320,9 +320,9 @@ void OptiQuantAlgorithm::addHypotheses_(Size mono_iso_mt_index, const vector<Siz
     }
 
     bool ok = false;
-    Int n = 0;
+    Size n = 0;
     const vector<pair<Size, Size> >& mts = h.getMassTraces();
-    for (Int i = 0; i < require_nm_m_ && i < mts.size(); ++i)
+    for (Size i = 0; i < require_nm_m_ && i < mts.size(); ++i)
     {
       if (mts[i].first < require_nm_m_)
       {
@@ -668,7 +668,6 @@ double OptiQuantAlgorithm::averagineCorrelation_(const vector<pair<Size, double>
 
 double OptiQuantAlgorithm::computeMZScore_(const FeatureHypothesis& hypo) const
 {
-  Int z = hypo.getCharge();
   const vector<pair<Size, Size> >& masstraces = hypo.getMassTraces();
 
   if (masstraces.size() < 2)
@@ -738,7 +737,7 @@ double OptiQuantAlgorithm::computeIntensityScore_(const FeatureHypothesis& hypo,
     for (vector<pair<Size, Size> >::const_iterator it = hypo.getMassTraces().begin(); it != hypo.getMassTraces().end(); ++it)
     {
       Size iso_pos = it->first;
-      double intensity = kd_data_.intensity(it->second);
+      double intensity = (double)(kd_data_.intensity(it->second));
       iso_ints.push_back(make_pair(iso_pos, intensity));
     }
     final_score = (1.0 + averagineCorrelation_(iso_ints, mol_weight, score_int_ignore_missing_));
@@ -871,7 +870,7 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
       if (!trace_preference_similarity_)
       {
         // trace preference criterion is 'intensity' => add tuples for sorting by intensity here
-        ConsensusTraceSorter tuple = {iso_pos, handles.size(), mt_cf.getIntensity(), 0.0, false};
+        ConsensusTraceSorter tuple = {iso_pos, handles.size(), (double)(mt_cf.getIntensity()), 0.0, false};
         trace_picker.push_back(tuple);
       }
 
@@ -882,7 +881,7 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
         {
           intensities_for_map_idx[map_idx] = vector<double>(max_nr_traces_, 0.0);
         }
-        intensities_for_map_idx[map_idx][iso_pos] = fh_it->getIntensity();
+        intensities_for_map_idx[map_idx][iso_pos] = (double)(fh_it->getIntensity());
 
         if (iso_pos == 0)
         {
@@ -1037,7 +1036,6 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
       if (!mt_assembled_[i])
       {
         bool id_attached = false;
-        Int charge = 0;
 
         const vector<PeptideIdentification>& pep_ids = (*input_map_)[i].getPeptideIdentifications();
         if (pep_ids.size())
@@ -1046,24 +1044,12 @@ void OptiQuantAlgorithm::compileResults_(const vector<FeatureHypothesis>& featur
           if (pep_hits.size())
           {
             id_attached = true;
-            charge = pep_hits[0].getCharge();
           }
         }
 
         if (include_unidentified_unassembled_traces_ || id_attached)
         {
           ConsensusFeature mt_cf((*input_map_)[i]);
-//          // transfer charge from peptide ID if present
-//          if (charge != 0)
-//          {
-//            mt_cf.setCharge(charge);
-//            typedef ConsensusFeature::HandleSetType HST;
-//            const HST& subfeatures = mt_cf.getFeatures();
-//            for (HST::iterator it = subfeatures.begin(); it != subfeatures.end(); ++it)
-//            {
-//              const_cast<FeatureHandle&>(*it).setCharge(charge);
-//            }
-//          }
           output_map.push_back(mt_cf);
         }
       }
@@ -1087,7 +1073,7 @@ void OptiQuantAlgorithm::addSimilarityBasedTracePickingTuples_(const FeatureHypo
     for (ConsensusFeature::HandleSetType::iterator fh_it = handles.begin(); fh_it != handles.end(); ++fh_it)
     {
       Size map_idx = fh_it->getMapIndex();
-      double inty = fh_it->getIntensity();
+      double inty = (double)(fh_it->getIntensity());
       ctraces_normalized[iso_pos][map_idx] = inty;
       ctraces_no_zeros[iso_pos].push_back(inty);
     }
@@ -1201,16 +1187,14 @@ void OptiQuantAlgorithm::updateMembers_()
   try
   {
     param_.getValue("require_n_out_of_first_m").toString().split("/", nm);
-    require_nm_n_ = nm.at(0).toInt();
-    require_nm_m_ = nm.at(1).toInt();
+    require_nm_n_ = (Size)(nm.at(0).toInt());
+    require_nm_m_ = (Size)(nm.at(1).toInt());
   }
   catch(...)
   {
     fail = true;
   }
-  if (fail || nm.size() != 2 || require_nm_n_ < 0 ||
-      require_nm_m_ < 0 || require_nm_n_ > require_nm_m_ ||
-      require_nm_m_ > max_nr_traces_)
+  if (fail || nm.size() != 2 || require_nm_n_ > require_nm_m_ || require_nm_m_ > max_nr_traces_)
   {
     throw OpenMS::Exception::InvalidParameter(__FILE__, __LINE__, __FUNCTION__, "Parameter 'require_n_out_of_first_m' has invalid format. Should be 'n/m' where n and m are non-negative integers, n <= m, and m <= max_nr_traces.");
   }
